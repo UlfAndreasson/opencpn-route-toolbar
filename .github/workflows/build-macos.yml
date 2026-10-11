@@ -14,13 +14,27 @@ jobs:
           submodules: recursive
 
       - name: Install dependencies
-        run: brew install cmake wxwidgets
+        run: brew install cmake wxwidgets@3.2
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: |
+          WX_PREFIX="$(brew --prefix wxwidgets@3.2)"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DwxWidgets_CONFIG_EXECUTABLE="$WX_PREFIX/bin/wx-config-3.2"
 
       - name: Build
         run: cmake --build build --config Release -j 2
+
+      - name: Rewrite wxWidgets runtime paths for OpenCPN
+        run: |
+          PLUGIN="build/libroute_toolbar_pi.dylib"
+          for lib in $(otool -L "$PLUGIN" | awk '/libwx/ {print $1}'); do
+            base=$(basename "$lib")
+            install_name_tool -change "$lib" "@executable_path/../Frameworks/$base" "$PLUGIN"
+          done
+          echo "Plugin dependencies after rewrite:"
+          otool -L "$PLUGIN"
 
       - name: Upload plugin
         uses: actions/upload-artifact@v4
