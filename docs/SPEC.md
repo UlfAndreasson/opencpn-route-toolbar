@@ -14,14 +14,17 @@ The first usable version should solve three concrete passage-planning workflows:
 1. Activate **Route EBL/VRM** from the Route Toolbar.
 2. Click a route waypoint or a point on a route leg.
 3. Click the target/sight mark.
-4. Enter or edit target name/description.
-5. Object is stored and remains editable after restart.
+4. Freeze the selected EBL/VRM geometry while the naming dialog is open.
+5. Enter or edit target name/description.
+6. Object is stored and remains editable after restart.
 
 ### Display
 - EBL line from route point to target.
-- Default VRM arc: 90° total, centred on the EBL bearing (±45°).
+- Default VRM arc: 30° total, centred on the EBL bearing (±15°).
 - Arc radius equals target range.
+- The arc is intended as a compact visual range marker, not as a full VRM circle.
 - Optional configurable arc width and orientation later.
+- Bearing is the true bearing from the route point to the target.
 - Bearing and range displayed near the object.
 - EBL/VRM information font should be configurable independently from hover tooltip font.
 
