@@ -73,6 +73,7 @@ public:
 private:
   struct RouteWaypointHit {
     bool found{false};
+    bool is_mark{false};
     double lat{0.0};
     double lon{0.0};
     double distance_nm{0.0};
@@ -94,6 +95,9 @@ private:
     wxString route_name;
     wxString waypoint_guid;
     wxString waypoint_name;
+    bool start_is_mark{false};
+    wxString start_mark_guid;
+    wxString start_mark_name;
     wxString target_name;
   };
 
@@ -160,6 +164,11 @@ private:
 
   RouteWaypointHit FindNearestRouteWaypoint(double lat, double lon,
                                             double max_distance_nm) const;
+  RouteWaypointHit FindNearestStandaloneMark(double lat, double lon,
+                                             double max_distance_nm) const;
+  RouteWaypointHit FindNearestEblStart(double lat, double lon,
+                                       double max_distance_nm) const;
+  bool RefreshEblStartFromMark(RouteEblVrm& item) const;
   int FindNearestEblTarget(double lat, double lon,
                            double max_distance_nm) const;
   void ShowEblTargetActions(int index);
