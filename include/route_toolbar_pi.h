@@ -11,6 +11,8 @@
 
 class RouteToolbarDialog;
 class wxFileConfig;
+class wxMenu;
+class wxMenuItem;
 
 class route_toolbar_pi final : public opencpn_plugin_121 {
 public:
@@ -33,6 +35,7 @@ public:
 
   int GetToolbarToolCount() override;
   void OnToolbarToolCallback(int id) override;
+  void OnContextMenuItemCallback(int id) override;
 
   bool MouseEventHook(wxMouseEvent& event) override;
   void SetCursorLatLon(double lat, double lon) override;
@@ -42,6 +45,7 @@ public:
   void BeginEblVrm();
   void BeginPil();
   void ExportRouteReport();
+  void ExportRoutePdfReport();
   void CancelInteractiveTool();
   void OnDialogHidden();
 
@@ -127,11 +131,17 @@ private:
     Idle,
     AwaitLeg,
     AwaitOffsetPoint,
+    MoveExistingAnchor,
   };
+
+  enum class ContextObjectKind { None, EblVrm, Pil };
 
   void ShowToolWindow();
   void HideToolWindow();
   void SetStatus(const wxString& text);
+  void UpdateToolButtons();
+  void UpdateContextMenuHit();
+
   RouteWaypointHit FindNearestRouteWaypoint(double lat, double lon,
                                             double max_distance_nm) const;
   int FindNearestEblTarget(double lat, double lon,
@@ -146,9 +156,14 @@ private:
 
   RouteLegHit FindNearestRouteLeg(double lat, double lon,
                                   double max_distance_nm) const;
+  int FindNearestPil(double lat, double lon, double max_distance_nm) const;
   bool BuildPilFromAnchor(const RouteLegHit& leg, double anchor_lat,
                           double anchor_lon, RoutePil& item) const;
   void CompletePil(double anchor_lat, double anchor_lon);
+  void ShowPilActions(int index);
+  void BeginMovePilAnchor(int index);
+  bool CommitMovePilAnchor(double anchor_lat, double anchor_lon);
+  void DeletePil(int index);
   void DrawPil(wxDC& dc, PlugIn_ViewPort* vp, const RoutePil& item,
                bool preview) const;
   void DrawPilGL(PlugIn_ViewPort* vp, const RoutePil& item,
@@ -173,6 +188,12 @@ private:
   bool m_dialog_visible{false};
   wxBitmap m_toolbar_bitmap;
 
+  int m_context_edit_id{-1};
+  wxMenu* m_context_menu_owner{nullptr};
+  wxMenuItem* m_context_edit_item{nullptr};
+  ContextObjectKind m_context_object_kind{ContextObjectKind::None};
+  int m_context_object_index{-1};
+
   EblMode m_ebl_mode{EblMode::Idle};
   RouteWaypointHit m_pending_start;
   std::vector<RouteEblVrm> m_ebl_vrms;
@@ -181,6 +202,7 @@ private:
   PilMode m_pil_mode{PilMode::Idle};
   RouteLegHit m_pending_leg;
   std::vector<RoutePil> m_pils;
+  int m_edit_pil_index{-1};
 
   int m_label_font_size{14};
   double m_cursor_lat{0.0};
