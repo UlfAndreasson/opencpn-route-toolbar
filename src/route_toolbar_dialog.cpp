@@ -3,6 +3,7 @@
 #include "route_toolbar_dialog.h"
 
 #include <wx/button.h>
+#include <wx/clrpicker.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
 #include <wx/statline.h>
@@ -16,7 +17,9 @@ enum : int {
   ID_ROUTE_EBL_VRM = wxID_HIGHEST + 410,
   ID_ROUTE_PIL,
   ID_ROUTE_REPORT,
-  ID_LABEL_SIZE
+  ID_LABEL_SIZE,
+  ID_EBL_COLOUR,
+  ID_PIL_COLOUR
 };
 }
 
@@ -55,6 +58,24 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
                  0, wxALIGN_CENTER_VERTICAL | wxLEFT, 5);
   top->Add(label_row, 0, wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
+  auto* colour_row = new wxBoxSizer(wxHORIZONTAL);
+  colour_row->Add(new wxStaticText(this, wxID_ANY, _("EBL/VRM:")),
+                  0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+  m_ebl_colour = new wxColourPickerCtrl(
+      this, ID_EBL_COLOUR,
+      m_plugin ? m_plugin->GetEblColour() : wxColour(210, 0, 220),
+      wxDefaultPosition, wxSize(55, -1));
+  colour_row->Add(m_ebl_colour, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 18);
+
+  colour_row->Add(new wxStaticText(this, wxID_ANY, _("PIL:")),
+                  0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+  m_pil_colour = new wxColourPickerCtrl(
+      this, ID_PIL_COLOUR,
+      m_plugin ? m_plugin->GetPilColour() : wxColour(0, 105, 125),
+      wxDefaultPosition, wxSize(55, -1));
+  colour_row->Add(m_pil_colour, 0, wxALIGN_CENTER_VERTICAL);
+  top->Add(colour_row, 0, wxLEFT | wxRIGHT | wxBOTTOM, 10);
+
   m_status = new wxStaticText(
       this, wxID_ANY,
       _("Route EBL/VRM, Route PIL and Route Report are ready."));
@@ -71,6 +92,10 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnReport, this, ID_ROUTE_REPORT);
   Bind(wxEVT_SPINCTRL, &RouteToolbarDialog::OnLabelSize, this, ID_LABEL_SIZE);
   Bind(wxEVT_TEXT, &RouteToolbarDialog::OnLabelSizeText, this, ID_LABEL_SIZE);
+  Bind(wxEVT_COLOURPICKER_CHANGED, &RouteToolbarDialog::OnEblColour, this,
+       ID_EBL_COLOUR);
+  Bind(wxEVT_COLOURPICKER_CHANGED, &RouteToolbarDialog::OnPilColour, this,
+       ID_PIL_COLOUR);
   Bind(wxEVT_CLOSE_WINDOW, &RouteToolbarDialog::OnClose, this);
 }
 
@@ -124,6 +149,14 @@ void RouteToolbarDialog::OnLabelSize(wxSpinEvent& event) {
 void RouteToolbarDialog::OnLabelSizeText(wxCommandEvent&) {
   if (m_plugin && m_label_size)
     m_plugin->SetLabelFontSize(m_label_size->GetValue());
+}
+
+void RouteToolbarDialog::OnEblColour(wxColourPickerEvent& event) {
+  if (m_plugin) m_plugin->SetEblColour(event.GetColour());
+}
+
+void RouteToolbarDialog::OnPilColour(wxColourPickerEvent& event) {
+  if (m_plugin) m_plugin->SetPilColour(event.GetColour());
 }
 
 void RouteToolbarDialog::OnClose(wxCloseEvent&) {
