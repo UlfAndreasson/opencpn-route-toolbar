@@ -6,12 +6,14 @@ The current scaffold targets OpenCPN plugin API **1.18**, which is compatible wi
 
 - Xcode command-line tools
 - CMake
-- wxWidgets 3.2 built for the same CPU architecture as OpenCPN
+- **wxWidgets 3.2** built for the same CPU architecture as OpenCPN
+
+OpenCPN 5.12.2 on macOS ships wxWidgets 3.2. Do not build this plugin against Homebrew's default `wxwidgets` formula, which is wxWidgets 3.3 and can cause a crash when a plugin window is created.
 
 With Homebrew:
 
 ```bash
-brew install cmake wxwidgets
+brew install cmake wxwidgets@3.2
 ```
 
 ## Clone
@@ -29,8 +31,15 @@ git submodule update --init --recursive
 
 ## Configure and build
 
+On Apple Silicon:
+
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+rm -rf build
+WX32="$(brew --prefix wxwidgets@3.2)/bin/wx-config-3.2"
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DwxWidgets_CONFIG_EXECUTABLE="$WX32"
 cmake --build build --config Release -j 4
 ```
 
@@ -39,6 +48,33 @@ Expected macOS output:
 ```text
 build/libroute_toolbar_pi.dylib
 ```
+
+The CMake build rewrites wxWidgets dependencies in the finished plugin to OpenCPN's bundled runtime:
+
+```text
+@executable_path/../Frameworks/libwx_...-3.2.dylib
+```
+
+Verify with:
+
+```bash
+otool -L build/libroute_toolbar_pi.dylib | grep wx
+```
+
+No `/opt/homebrew/.../libwx...` path should remain in the final plugin.
+
+## Install development build
+
+Quit OpenCPN first, then:
+
+```bash
+PLUGIN_DIR="$HOME/Library/Application Support/OpenCPN/Contents/PlugIns"
+mkdir -p "$PLUGIN_DIR"
+cp build/libroute_toolbar_pi.dylib "$PLUGIN_DIR/"
+codesign --force --sign - "$PLUGIN_DIR/libroute_toolbar_pi.dylib"
+```
+
+Then start OpenCPN and enable **Route Toolbar** in Options -> Plugins.
 
 The first milestone is successful when OpenCPN loads the plugin and a **Route Toolbar** button opens a small window containing:
 
@@ -50,11 +86,7 @@ These buttons are UI scaffolding only in v0.1.0; chart interaction is implemente
 
 ## Architecture note
 
-The plugin, OpenCPN and wxWidgets must use compatible architectures (for example all `arm64` on Apple Silicon). If CMake selects the wrong architecture, configure explicitly, e.g.:
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
-```
+The plugin, OpenCPN and wxWidgets must use compatible architectures. OpenCPN 5.12.2-universal can host the native Apple Silicon build when running as `arm64`.
 
 ## OpenCPN API dependency
 
