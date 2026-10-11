@@ -51,7 +51,7 @@ extern "C" DECL_EXP opencpn_plugin* create_pi(void* ppimgr) {
 extern "C" DECL_EXP void destroy_pi(opencpn_plugin* plugin) { delete plugin; }
 
 route_toolbar_pi::route_toolbar_pi(void* ppimgr)
-    : opencpn_plugin_118(ppimgr), m_toolbar_bitmap(route_toolbar_xpm) {}
+    : opencpn_plugin_121(ppimgr), m_toolbar_bitmap(route_toolbar_xpm) {}
 
 route_toolbar_pi::~route_toolbar_pi() = default;
 
@@ -76,7 +76,7 @@ bool route_toolbar_pi::DeInit() {
 }
 
 int route_toolbar_pi::GetAPIVersionMajor() { return 1; }
-int route_toolbar_pi::GetAPIVersionMinor() { return 18; }
+int route_toolbar_pi::GetAPIVersionMinor() { return 21; }
 int route_toolbar_pi::GetPlugInVersionMajor() { return kPluginVersionMajor; }
 int route_toolbar_pi::GetPlugInVersionMinor() { return kPluginVersionMinor; }
 int route_toolbar_pi::GetPlugInVersionPatch() { return kPluginVersionPatch; }
