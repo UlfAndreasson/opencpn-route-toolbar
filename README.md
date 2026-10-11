@@ -8,7 +8,7 @@ A route/passage-planning plugin for OpenCPN focused on practical pilotage tools 
 - Pick a point on/near a route or waypoint.
 - Pick a visual/radar target such as a lighthouse, buoy, beacon or conspicuous object.
 - Draw an EBL from the route point to the target.
-- Draw a configurable VRM **arc** instead of a full circle (default: 90° / ±45° around the EBL bearing).
+- Draw a configurable VRM **arc** instead of a full circle (default: 30° / ±15° around the EBL bearing).
 - Show bearing and range clearly on the chart.
 - Store target name/description and target position.
 - Associate the object with a route and waypoint/leg.
@@ -48,29 +48,31 @@ Where practical, Route Toolbar should integrate with or provide equivalent funct
 
 1. **Route-aware** — planning objects belong to a route, waypoint or route leg.
 2. **Few clicks** — avoid manually recreating route geometry.
-3. **Clear chart display** — arcs instead of large overlapping VRM circles where appropriate.
+3. **Clear chart display** — short arcs instead of large overlapping VRM circles.
 4. **Persistent** — objects survive OpenCPN restart reliably.
 5. **Reportable** — route + pilotage information can be exported as one coherent passage plan.
 6. **Non-destructive** — never modify an OpenCPN route unexpectedly.
 
 ## Current status
 
-### v0.2 Route EBL/VRM prototype
+### v0.2.2 Route EBL/VRM prototype
 
-The plugin now targets OpenCPN 5.14.2 / API 1.21 and includes a first working Route EBL/VRM workflow:
+The plugin targets OpenCPN 5.14.2 / API 1.21 and includes a working Route EBL/VRM workflow:
 
 - **Route Toolbar** opens as a non-modal OpenCPN tool window.
 - Select **Route EBL / VRM**.
 - Click near a route waypoint; the click snaps to the nearest waypoint within 0.10 NM.
 - Click the lighthouse, buoy, beacon or other sight mark.
+- The selected geometry is frozen while the target-name dialog is open, so the preview does not follow the mouse onto the dialog.
 - Enter a target/sight-mark name.
 - The chart shows:
   - EBL line from the route waypoint to the target
-  - true bearing
+  - true bearing from route point to target
   - range in NM
-  - a 90° VRM arc centred on the EBL bearing instead of a full circle
+  - a compact 30° VRM arc centred on the EBL bearing instead of a full circle
 - While choosing the target, the EBL and VRM arc are previewed live.
 - Repeated EBL/VRM objects can be created in one session; right-click exits creation mode.
+- Both standard and OpenGL chart canvases are supported.
 
 Current limitations of this prototype:
 
