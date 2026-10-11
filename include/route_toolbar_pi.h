@@ -39,6 +39,7 @@ public:
   bool RenderGLOverlay(wxGLContext* pcontext, PlugIn_ViewPort* vp) override;
 
   void BeginEblVrm();
+  void ExportRouteReport();
   void CancelInteractiveTool();
   void OnDialogHidden();
 
