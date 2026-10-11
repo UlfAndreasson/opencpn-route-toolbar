@@ -4,6 +4,7 @@
 
 #include <wx/button.h>
 #include <wx/sizer.h>
+#include <wx/spinctrl.h>
 #include <wx/statline.h>
 #include <wx/stattext.h>
 
@@ -13,7 +14,8 @@ namespace {
 enum : int {
   ID_ROUTE_EBL_VRM = wxID_HIGHEST + 410,
   ID_ROUTE_PIL,
-  ID_ROUTE_REPORT
+  ID_ROUTE_REPORT,
+  ID_LABEL_SIZE
 };
 }
 
@@ -37,6 +39,18 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   top->Add(pil, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
   top->Add(report, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
+  auto* label_row = new wxBoxSizer(wxHORIZONTAL);
+  label_row->Add(new wxStaticText(this, wxID_ANY, _("EBL label size:")),
+                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+  m_label_size = new wxSpinCtrl(this, ID_LABEL_SIZE, wxEmptyString,
+                                wxDefaultPosition, wxSize(75, -1),
+                                wxSP_ARROW_KEYS, 8, 30,
+                                m_plugin ? m_plugin->GetLabelFontSize() : 14);
+  label_row->Add(m_label_size, 0, wxALIGN_CENTER_VERTICAL);
+  label_row->Add(new wxStaticText(this, wxID_ANY, _("pt")),
+                 0, wxALIGN_CENTER_VERTICAL | wxLEFT, 5);
+  top->Add(label_row, 0, wxLEFT | wxRIGHT | wxBOTTOM, 10);
+
   m_status = new wxStaticText(
       this, wxID_ANY,
       _("v0.2: Route EBL/VRM is ready. Select the tool, then click a route waypoint."));
@@ -50,6 +64,7 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnEblVrm, this, ID_ROUTE_EBL_VRM);
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnPil, this, ID_ROUTE_PIL);
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnReport, this, ID_ROUTE_REPORT);
+  Bind(wxEVT_SPINCTRL, &RouteToolbarDialog::OnLabelSize, this, ID_LABEL_SIZE);
   Bind(wxEVT_CLOSE_WINDOW, &RouteToolbarDialog::OnClose, this);
 }
 
@@ -74,6 +89,10 @@ void RouteToolbarDialog::OnPil(wxCommandEvent&) {
 void RouteToolbarDialog::OnReport(wxCommandEvent&) {
   if (m_plugin) m_plugin->CancelInteractiveTool();
   SetStatus(_("Route Report selected — CSV/HTML export follows after persistent route data."));
+}
+
+void RouteToolbarDialog::OnLabelSize(wxSpinEvent& event) {
+  if (m_plugin) m_plugin->SetLabelFontSize(event.GetValue());
 }
 
 void RouteToolbarDialog::OnClose(wxCloseEvent&) {
