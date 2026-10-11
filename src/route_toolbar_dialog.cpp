@@ -25,6 +25,8 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
                wxDefaultSize,
                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER | wxFRAME_FLOAT_ON_PARENT),
       m_plugin(plugin) {
+  if (m_plugin) m_plugin->EnsureContextMenu();
+
   auto* top = new wxBoxSizer(wxVERTICAL);
 
   auto* intro = new wxStaticText(
