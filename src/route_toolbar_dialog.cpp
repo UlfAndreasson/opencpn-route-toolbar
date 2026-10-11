@@ -7,6 +7,7 @@
 #include <wx/spinctrl.h>
 #include <wx/statline.h>
 #include <wx/stattext.h>
+#include <wx/tglbtn.h>
 
 #include "route_toolbar_pi.h"
 
@@ -21,7 +22,8 @@ enum : int {
 
 RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugin)
     : wxDialog(parent, wxID_ANY, _("Route Toolbar"), wxDefaultPosition,
-               wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
+               wxDefaultSize,
+               wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER | wxFRAME_FLOAT_ON_PARENT),
       m_plugin(plugin) {
   auto* top = new wxBoxSizer(wxVERTICAL);
 
@@ -31,12 +33,13 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   top->Add(intro, 0, wxALL, 10);
   top->Add(new wxStaticLine(this), 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
 
-  auto* ebl = new wxButton(this, ID_ROUTE_EBL_VRM, _("Route EBL / VRM"));
-  auto* pil = new wxButton(this, ID_ROUTE_PIL, _("Route PIL"));
-  auto* report = new wxButton(this, ID_ROUTE_REPORT, _("Route Report"));
+  m_ebl_button =
+      new wxToggleButton(this, ID_ROUTE_EBL_VRM, _("Route EBL / VRM"));
+  m_pil_button = new wxToggleButton(this, ID_ROUTE_PIL, _("Route PIL"));
+  auto* report = new wxButton(this, ID_ROUTE_REPORT, _("Route Report (PDF)"));
 
-  top->Add(ebl, 0, wxEXPAND | wxALL, 10);
-  top->Add(pil, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+  top->Add(m_ebl_button, 0, wxEXPAND | wxALL, 10);
+  top->Add(m_pil_button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
   top->Add(report, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
   auto* label_row = new wxBoxSizer(wxHORIZONTAL);
@@ -61,8 +64,9 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   SetSizerAndFit(top);
   SetMinSize(wxSize(390, GetSize().GetHeight()));
 
-  Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnEblVrm, this, ID_ROUTE_EBL_VRM);
-  Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnPil, this, ID_ROUTE_PIL);
+  Bind(wxEVT_TOGGLEBUTTON, &RouteToolbarDialog::OnEblVrm, this,
+       ID_ROUTE_EBL_VRM);
+  Bind(wxEVT_TOGGLEBUTTON, &RouteToolbarDialog::OnPil, this, ID_ROUTE_PIL);
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnReport, this, ID_ROUTE_REPORT);
   Bind(wxEVT_SPINCTRL, &RouteToolbarDialog::OnLabelSize, this, ID_LABEL_SIZE);
   Bind(wxEVT_TEXT, &RouteToolbarDialog::OnLabelSizeText, this, ID_LABEL_SIZE);
@@ -78,16 +82,29 @@ void RouteToolbarDialog::SetStatus(const wxString& text) {
   Layout();
 }
 
-void RouteToolbarDialog::OnEblVrm(wxCommandEvent&) {
-  if (m_plugin) m_plugin->BeginEblVrm();
+void RouteToolbarDialog::SetToolButtons(bool ebl_active, bool pil_active) {
+  if (m_ebl_button) m_ebl_button->SetValue(ebl_active);
+  if (m_pil_button) m_pil_button->SetValue(pil_active);
 }
 
-void RouteToolbarDialog::OnPil(wxCommandEvent&) {
-  if (m_plugin) m_plugin->BeginPil();
+void RouteToolbarDialog::OnEblVrm(wxCommandEvent& event) {
+  if (!m_plugin) return;
+  if (event.IsChecked())
+    m_plugin->BeginEblVrm();
+  else
+    m_plugin->CancelInteractiveTool();
+}
+
+void RouteToolbarDialog::OnPil(wxCommandEvent& event) {
+  if (!m_plugin) return;
+  if (event.IsChecked())
+    m_plugin->BeginPil();
+  else
+    m_plugin->CancelInteractiveTool();
 }
 
 void RouteToolbarDialog::OnReport(wxCommandEvent&) {
-  if (m_plugin) m_plugin->ExportRouteReport();
+  if (m_plugin) m_plugin->ExportRoutePdfReport();
 }
 
 void RouteToolbarDialog::OnLabelSize(wxSpinEvent& event) {
