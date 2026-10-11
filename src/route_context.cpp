@@ -48,11 +48,11 @@ wxString WriteInvertedToolbarSvg() {
 
   const wxString path = dir + wxFILE_SEP_PATH + "route-toolbar-inverted.svg";
   static const char* svg = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <rect x="2" y="2" width="28" height="28" rx="5" fill="#55585b" stroke="#ffffff" stroke-width="1.8"/>
-  <path d="M6 8 L15.5 19 L26 10" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="6" cy="8" r="3.2" fill="#55585b" stroke="#ffffff" stroke-width="2.2"/>
-  <circle cx="15.5" cy="19" r="3.2" fill="#55585b" stroke="#ffffff" stroke-width="2.2"/>
-  <circle cx="26" cy="10" r="3.2" fill="#55585b" stroke="#ffffff" stroke-width="2.2"/>
+  <rect x="2.5" y="2.5" width="27" height="27" rx="4.5" fill="#4f5255" stroke="#c9cccf" stroke-width="0.9"/>
+  <path d="M6.5 8.5 L15.5 19 L25.5 10.5" fill="none" stroke="#d6d9dc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="6.5" cy="8.5" r="2.8" fill="#4f5255" stroke="#d6d9dc" stroke-width="1.6"/>
+  <circle cx="15.5" cy="19" r="2.8" fill="#4f5255" stroke="#d6d9dc" stroke-width="1.6"/>
+  <circle cx="25.5" cy="10.5" r="2.8" fill="#4f5255" stroke="#d6d9dc" stroke-width="1.6"/>
 </svg>)SVG";
 
   wxFFile file(path, "wb");
@@ -64,8 +64,6 @@ wxString WriteInvertedToolbarSvg() {
 }  // namespace
 
 void route_toolbar_pi::EnsureContextMenu() {
-  // Refresh the toolbar bitmap once the Route Toolbar window is first opened.
-  // This gives the icon an inverted dark face with a clear white frame.
   const wxString icon_path = WriteInvertedToolbarSvg();
   if (!icon_path.IsEmpty() && m_toolbar_id >= 0)
     SetToolbarToolBitmapsSVG(m_toolbar_id, icon_path, icon_path, icon_path);
