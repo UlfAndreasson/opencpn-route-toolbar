@@ -10,12 +10,15 @@
 #include <wx/choicdlg.h>
 #include <wx/dc.h>
 #include <wx/dcmemory.h>
+#include <wx/ffile.h>
 #include <wx/fileconf.h>
+#include <wx/filename.h>
 #include <wx/font.h>
 #include <wx/image.h>
 #include <wx/intl.h>
 #include <wx/msgdlg.h>
 #include <wx/pen.h>
+#include <wx/stdpaths.h>
 #include <wx/textdlg.h>
 
 #ifdef __APPLE__
@@ -38,8 +41,8 @@
 
 namespace {
 constexpr int kPluginVersionMajor = 0;
-constexpr int kPluginVersionMinor = 2;
-constexpr int kPluginVersionPatch = 6;
+constexpr int kPluginVersionMinor = 3;
+constexpr int kPluginVersionPatch = 0;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kDefaultArcWidthDeg = 30.0;
@@ -53,28 +56,50 @@ constexpr int kMinLabelFontSize = 8;
 constexpr int kMaxLabelFontSize = 30;
 constexpr const char* kConfigPath = "/PlugIns/RouteToolbar";
 
-// Grayscale route icon: three small hollow waypoints joined by a thin route.
+// Fallback bitmap used in plugin metadata if SVG toolbar insertion is not
+// available. The toolbar itself uses the transparent SVG below.
 static const char* route_toolbar_xpm[] = {
-    "16 16 3 1",
+    "16 16 2 1",
     "  c None",
-    "D c #4A4A4A",
-    "L c #969696",
+    "D c #666666",
     "                ",
     "  DDD           ",
     "  D D           ",
-    "  DDD L         ",
-    "       L        ",
-    "       DDD      ",
-    "       D D      ",
-    "       DDD L    ",
-    "            L   ",
-    "            DDD ",
-    "            D D ",
-    "            DDD ",
+    "  DDD           ",
+    "     D          ",
+    "      DDD       ",
+    "      D D       ",
+    "      DDD       ",
+    "         D      ",
+    "          DDD   ",
+    "          D D   ",
+    "          DDD   ",
     "                ",
     "                ",
     "                ",
     "                "};
+
+wxString EnsureToolbarSvg() {
+  const wxString base = wxStandardPaths::Get().GetUserDataDir();
+  const wxString dir = base + wxFILE_SEP_PATH + "route_toolbar_pi";
+  if (!wxFileName::DirExists(dir) &&
+      !wxFileName::Mkdir(dir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
+    return wxEmptyString;
+
+  const wxString path = dir + wxFILE_SEP_PATH + "route-toolbar.svg";
+  static const char* svg = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <path d="M6 8 L15.5 19 L26 10" fill="none" stroke="#66686b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="6" cy="8" r="3.2" fill="none" stroke="#66686b" stroke-width="2.2"/>
+  <circle cx="15.5" cy="19" r="3.2" fill="none" stroke="#66686b" stroke-width="2.2"/>
+  <circle cx="26" cy="10" r="3.2" fill="none" stroke="#66686b" stroke-width="2.2"/>
+</svg>)SVG";
+
+  wxFFile file(path, "wb");
+  if (!file.IsOpened()) return wxEmptyString;
+  file.Write(svg, wxConvUTF8);
+  file.Close();
+  return path;
+}
 }  // namespace
 
 extern "C" DECL_EXP opencpn_plugin* create_pi(void* ppimgr) {
@@ -92,10 +117,19 @@ int route_toolbar_pi::Init() {
   m_parent_window = GetOCPNCanvasWindow();
   LoadPersistentState();
 
-  m_toolbar_id = InsertPlugInTool(
-      _("Route Toolbar"), &m_toolbar_bitmap, &m_toolbar_bitmap, wxITEM_CHECK,
-      _("Route Toolbar"), _("Route planning tools: EBL/VRM, PIL and report"),
-      nullptr, -1, 0, this);
+  const wxString svg_path = EnsureToolbarSvg();
+  if (!svg_path.IsEmpty()) {
+    m_toolbar_id = InsertPlugInToolSVG(
+        "", svg_path, svg_path, svg_path, wxITEM_NORMAL,
+        _("Route Toolbar"),
+        _("Route planning tools: EBL/VRM, PIL and report"),
+        nullptr, -1, 0, this);
+  } else {
+    m_toolbar_id = InsertPlugInTool(
+        _("Route Toolbar"), &m_toolbar_bitmap, &m_toolbar_bitmap, wxITEM_NORMAL,
+        _("Route Toolbar"), _("Route planning tools: EBL/VRM, PIL and report"),
+        nullptr, -1, 0, this);
+  }
 
   return WANTS_TOOLBAR_CALLBACK | INSTALLS_TOOLBAR_TOOL |
          WANTS_CURSOR_LATLON | WANTS_MOUSE_EVENTS | WANTS_OVERLAY_CALLBACK |
@@ -150,14 +184,12 @@ void route_toolbar_pi::ShowToolWindow() {
   m_dialog->Show();
   m_dialog->Raise();
   m_dialog_visible = true;
-  SetToolbarItemState(m_toolbar_id, true);
 }
 
 void route_toolbar_pi::HideToolWindow() {
   CancelInteractiveTool();
   if (m_dialog) m_dialog->Hide();
   m_dialog_visible = false;
-  SetToolbarItemState(m_toolbar_id, false);
 }
 
 void route_toolbar_pi::SetLabelFontSize(int point_size) {
@@ -173,9 +205,6 @@ void route_toolbar_pi::SetLabelFontSize(int point_size) {
 }
 
 wxFont route_toolbar_pi::GetEblLabelFont() const {
-  // Use an independent font object instead of OpenCPN's shared font manager.
-  // This makes the Route Toolbar label-size setting deterministic and keeps it
-  // isolated from ENC/chart text fonts.
   wxFont font(m_label_font_size, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL,
               wxFONTWEIGHT_NORMAL, false);
   if (!font.IsOk()) {
@@ -187,6 +216,8 @@ wxFont route_toolbar_pi::GetEblLabelFont() const {
 
 void route_toolbar_pi::BeginEblVrm() {
   if (!m_dialog_visible) ShowToolWindow();
+  m_pil_mode = PilMode::Idle;
+  m_pending_leg = RouteLegHit{};
   m_pending_start = RouteWaypointHit{};
   m_edit_item_index = -1;
   m_ebl_mode = EblMode::AwaitRoutePoint;
@@ -198,6 +229,8 @@ void route_toolbar_pi::CancelInteractiveTool() {
   m_ebl_mode = EblMode::Idle;
   m_pending_start = RouteWaypointHit{};
   m_edit_item_index = -1;
+  m_pil_mode = PilMode::Idle;
+  m_pending_leg = RouteLegHit{};
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
@@ -207,12 +240,51 @@ void route_toolbar_pi::SetCursorLatLon(double lat, double lon) {
   m_has_cursor = true;
 
   if ((m_ebl_mode == EblMode::AwaitTarget ||
-       m_ebl_mode == EblMode::MoveExistingTarget) &&
+       m_ebl_mode == EblMode::MoveExistingTarget ||
+       m_pil_mode == PilMode::AwaitOffsetPoint) &&
       m_parent_window)
     RequestRefresh(m_parent_window);
 }
 
 bool route_toolbar_pi::MouseEventHook(wxMouseEvent& event) {
+  if (m_pil_mode != PilMode::Idle) {
+    if (event.RightDown()) {
+      m_pil_mode = PilMode::Idle;
+      m_pending_leg = RouteLegHit{};
+      SetStatus(_("Route PIL stopped. Existing PIL objects remain visible."));
+      if (m_parent_window) RequestRefresh(m_parent_window);
+      return true;
+    }
+
+    if (!event.LeftDown() || !m_has_cursor) return false;
+
+    if (m_pil_mode == PilMode::AwaitLeg) {
+      const RouteLegHit leg = FindNearestRouteLeg(
+          m_cursor_lat, m_cursor_lon, 0.08);
+      if (!leg.found) {
+        SetStatus(_("No route leg found nearby. Click closer to the blue route line."));
+        return true;
+      }
+
+      m_pending_leg = leg;
+      m_pil_mode = PilMode::AwaitOffsetPoint;
+      wxString from = leg.from_name;
+      wxString to = leg.to_name;
+      if (from.IsEmpty()) from = wxString::Format("WP%d", leg.leg_index);
+      if (to.IsEmpty()) to = wxString::Format("WP%d", leg.leg_index + 1);
+      SetStatus(wxString::Format(
+          _("PIL leg selected: %s → %s, %03.0f°T. Now click the chart point / object where the parallel line should pass."),
+          from, to, leg.course_true));
+      if (m_parent_window) RequestRefresh(m_parent_window);
+      return true;
+    }
+
+    if (m_pil_mode == PilMode::AwaitOffsetPoint) {
+      CompletePil(m_cursor_lat, m_cursor_lon);
+      return true;
+    }
+  }
+
   if (m_ebl_mode == EblMode::MoveExistingTarget) {
     if (event.RightDown()) {
       m_ebl_mode = EblMode::Idle;
@@ -237,7 +309,7 @@ bool route_toolbar_pi::MouseEventHook(wxMouseEvent& event) {
 
   if (!event.LeftDown() || !m_has_cursor) return false;
 
-  if (m_dialog_visible &&
+  if (m_dialog_visible && m_pil_mode == PilMode::Idle &&
       (m_ebl_mode == EblMode::Idle ||
        m_ebl_mode == EblMode::AwaitRoutePoint)) {
     const int existing = FindNearestEblTarget(
@@ -521,6 +593,7 @@ void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
 
 void route_toolbar_pi::LoadPersistentState() {
   m_ebl_vrms.clear();
+  m_pils.clear();
 
   wxFileConfig* config = GetOCPNConfigObject();
   if (!config) return;
@@ -581,6 +654,7 @@ void route_toolbar_pi::LoadPersistentState() {
     if (item.range_nm >= 0.001) m_ebl_vrms.push_back(item);
   }
 
+  LoadPilPersistentState(config);
   config->SetPath(old_path);
 }
 
@@ -613,6 +687,7 @@ void route_toolbar_pi::SavePersistentState() const {
     config->Write(prefix + "TargetName", item.target_name);
   }
 
+  SavePilPersistentState(config);
   config->SetPath(old_path);
   config->Flush();
 }
@@ -621,6 +696,21 @@ bool route_toolbar_pi::RenderOverlay(wxDC& dc, PlugIn_ViewPort* vp) {
   if (!vp || !vp->bValid) return false;
 
   bool rendered = false;
+
+  for (const RoutePil& pil : m_pils) {
+    DrawPil(dc, vp, pil, false);
+    rendered = true;
+  }
+
+  if (m_pil_mode == PilMode::AwaitOffsetPoint && m_pending_leg.found &&
+      m_has_cursor) {
+    RoutePil preview;
+    if (BuildPilFromAnchor(m_pending_leg, m_cursor_lat, m_cursor_lon, preview)) {
+      DrawPil(dc, vp, preview, true);
+      rendered = true;
+    }
+  }
+
   for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
     if (m_ebl_mode == EblMode::MoveExistingTarget &&
         static_cast<int>(i) == m_edit_item_index)
@@ -687,6 +777,20 @@ bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
   glDisable(GL_CULL_FACE);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  for (const RoutePil& pil : m_pils) {
+    DrawPilGL(vp, pil, false);
+    rendered = true;
+  }
+
+  if (m_pil_mode == PilMode::AwaitOffsetPoint && m_pending_leg.found &&
+      m_has_cursor) {
+    RoutePil preview;
+    if (BuildPilFromAnchor(m_pending_leg, m_cursor_lat, m_cursor_lon, preview)) {
+      DrawPilGL(vp, preview, true);
+      rendered = true;
+    }
+  }
 
   for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
     if (m_ebl_mode == EblMode::MoveExistingTarget &&
@@ -978,8 +1082,6 @@ void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
   glVertex2i(x, y + height);
   glEnd();
 
-  // Restore exactly the texture/pixel-store state OpenCPN had before the
-  // plugin drew this label. This avoids contaminating the S52 renderer.
   glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous_texture));
   glPixelStorei(GL_UNPACK_ALIGNMENT, previous_unpack_alignment);
   if (texture_was_enabled)
@@ -1003,5 +1105,4 @@ void route_toolbar_pi::SetStatus(const wxString& text) {
 void route_toolbar_pi::OnDialogHidden() {
   CancelInteractiveTool();
   m_dialog_visible = false;
-  if (m_toolbar_id >= 0) SetToolbarItemState(m_toolbar_id, false);
 }
