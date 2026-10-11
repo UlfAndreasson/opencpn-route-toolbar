@@ -3,6 +3,7 @@
 
 #include <wx/dialog.h>
 
+class wxSpinCtrl;
 class wxStaticText;
 class route_toolbar_pi;
 
@@ -15,8 +16,10 @@ private:
   void OnEblVrm(wxCommandEvent& event);
   void OnPil(wxCommandEvent& event);
   void OnReport(wxCommandEvent& event);
+  void OnLabelSize(wxSpinEvent& event);
   void OnClose(wxCloseEvent& event);
 
   route_toolbar_pi* m_plugin{nullptr};
+  wxSpinCtrl* m_label_size{nullptr};
   wxStaticText* m_status{nullptr};
 };
