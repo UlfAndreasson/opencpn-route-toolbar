@@ -51,8 +51,10 @@ void route_toolbar_pi::EnsureContextMenu() {
       _("Edit the nearest Route Toolbar PIL"), wxITEM_NORMAL);
   m_context_pil_id = AddCanvasContextMenuItem(m_context_pil_item, this);
 
-  SetCanvasContextMenuItemViz(m_context_ebl_id, false);
-  SetCanvasContextMenuItemViz(m_context_pil_id, false);
+  // Keep both entries available. The callback resolves the object nearest
+  // the right-click position and gives a clear message if there is no hit.
+  SetCanvasContextMenuItemViz(m_context_ebl_id, true);
+  SetCanvasContextMenuItemViz(m_context_pil_id, true);
 }
 
 int route_toolbar_pi::FindNearestPil(double lat, double lon,
@@ -75,28 +77,34 @@ int route_toolbar_pi::FindNearestPil(double lat, double lon,
 }
 
 void route_toolbar_pi::UpdateContextMenuHit() {
-  if (m_context_ebl_id < 0 || m_context_pil_id < 0 || !m_has_cursor) return;
-
-  const bool ebl_hit =
-      FindNearestEblTarget(m_cursor_lat, m_cursor_lon, 0.04) >= 0;
-  const bool pil_hit = FindNearestPil(m_cursor_lat, m_cursor_lon, 0.05) >= 0;
-
-  SetCanvasContextMenuItemViz(m_context_ebl_id, ebl_hit);
-  SetCanvasContextMenuItemViz(m_context_pil_id, pil_hit);
+  // Kept for compatibility with older builds. Menu entries intentionally stay
+  // visible; object proximity is checked when the selected command runs.
 }
 
 void route_toolbar_pi::OnContextMenuItemCallback(int id) {
   if (!m_has_cursor) return;
+  wxWindow* parent = m_dialog ? static_cast<wxWindow*>(m_dialog)
+                              : m_parent_window;
 
   if (id == m_context_ebl_id) {
     const int ebl = FindNearestEblTarget(m_cursor_lat, m_cursor_lon, 0.04);
-    if (ebl >= 0) ShowEblTargetActions(ebl);
+    if (ebl >= 0) {
+      ShowEblTargetActions(ebl);
+    } else {
+      wxMessageBox(_("No Route Toolbar EBL/VRM target was found close to the right-click position."),
+                   _("Route EBL / VRM"), wxOK | wxICON_INFORMATION, parent);
+    }
     return;
   }
 
   if (id == m_context_pil_id) {
     const int pil = FindNearestPil(m_cursor_lat, m_cursor_lon, 0.05);
-    if (pil >= 0) ShowPilActions(pil);
+    if (pil >= 0) {
+      ShowPilActions(pil);
+    } else {
+      wxMessageBox(_("No Route Toolbar PIL line was found close to the right-click position."),
+                   _("Route PIL"), wxOK | wxICON_INFORMATION, parent);
+    }
     return;
   }
 }
