@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# OpenCPN 5.12.x on macOS uses wxWidgets 3.2. Building this plugin against
+# OpenCPN 5.14.2 on macOS uses wxWidgets 3.2. Building this plugin against
 # wxWidgets 3.3 can load successfully but crash when creating wx windows.
 if(APPLE AND NOT wxWidgets_CONFIG_EXECUTABLE)
   find_program(WX_CONFIG_32 NAMES wx-config-3.2)
@@ -20,16 +20,16 @@ include(${wxWidgets_USE_FILE})
 
 if(DEFINED wxWidgets_VERSION_STRING AND NOT wxWidgets_VERSION_STRING MATCHES "^3\\.2\\.")
   message(FATAL_ERROR
-    "Route Toolbar must be built with wxWidgets 3.2 for OpenCPN 5.12.x. "
+    "Route Toolbar must be built with wxWidgets 3.2 for OpenCPN 5.14.2. "
     "Detected wxWidgets ${wxWidgets_VERSION_STRING}. On macOS install wxwidgets@3.2 "
     "and configure with -DwxWidgets_CONFIG_EXECUTABLE=$(brew --prefix wxwidgets@3.2)/bin/wx-config-3.2")
 endif()
 
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/opencpn-libs/api-18/CMakeLists.txt")
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/opencpn-libs/api-21/CMakeLists.txt")
   message(FATAL_ERROR "OpenCPN API submodule missing. Run: git submodule update --init --recursive")
 endif()
 
-add_subdirectory(opencpn-libs/api-18 EXCLUDE_FROM_ALL)
+add_subdirectory(opencpn-libs/api-21 EXCLUDE_FROM_ALL)
 
 add_library(route_toolbar_pi SHARED
   src/route_toolbar_pi.cpp
