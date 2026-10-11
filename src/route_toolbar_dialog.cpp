@@ -65,6 +65,7 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnPil, this, ID_ROUTE_PIL);
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnReport, this, ID_ROUTE_REPORT);
   Bind(wxEVT_SPINCTRL, &RouteToolbarDialog::OnLabelSize, this, ID_LABEL_SIZE);
+  Bind(wxEVT_TEXT, &RouteToolbarDialog::OnLabelSizeText, this, ID_LABEL_SIZE);
   Bind(wxEVT_CLOSE_WINDOW, &RouteToolbarDialog::OnClose, this);
 }
 
@@ -93,6 +94,11 @@ void RouteToolbarDialog::OnReport(wxCommandEvent&) {
 
 void RouteToolbarDialog::OnLabelSize(wxSpinEvent& event) {
   if (m_plugin) m_plugin->SetLabelFontSize(event.GetValue());
+}
+
+void RouteToolbarDialog::OnLabelSizeText(wxCommandEvent&) {
+  if (m_plugin && m_label_size)
+    m_plugin->SetLabelFontSize(m_label_size->GetValue());
 }
 
 void RouteToolbarDialog::OnClose(wxCloseEvent&) {
