@@ -10,6 +10,7 @@
 #include <wx/choicdlg.h>
 #include <wx/dc.h>
 #include <wx/dcmemory.h>
+#include <wx/fileconf.h>
 #include <wx/image.h>
 #include <wx/intl.h>
 #include <wx/msgdlg.h>
@@ -38,7 +39,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 2;
-constexpr int kPluginVersionPatch = 4;
+constexpr int kPluginVersionPatch = 5;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kDefaultArcWidthDeg = 30.0;
@@ -47,45 +48,31 @@ constexpr int kTargetRingRadiusPx = 7;
 constexpr int kTargetCrosshairRadiusPx = 11;
 constexpr int kLabelOffsetXPx = 18;
 constexpr int kLabelOffsetYPx = 18;
-constexpr int kEblDefaultFontSize = 14;
-constexpr const char* kEblFontKey = "Route Toolbar EBL VRM";
+constexpr int kDefaultLabelFontSize = 14;
+constexpr int kMinLabelFontSize = 8;
+constexpr int kMaxLabelFontSize = 30;
+constexpr const char* kConfigPath = "/PlugIns/RouteToolbar";
 
-wxFont GetEblLabelFont() {
-  wxFont* configured = GetOCPNScaledFont_PlugIn(
-      wxString::FromUTF8(kEblFontKey), kEblDefaultFontSize);
-  if (configured && configured->IsOk()) return *configured;
-
-  wxFont fallback = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
-  if (fallback.GetPointSize() < kEblDefaultFontSize)
-    fallback.SetPointSize(kEblDefaultFontSize);
-  return fallback;
-}
-
-wxColour GetEblLabelColour() {
-  wxColour colour = GetFontColour_PlugIn(wxString::FromUTF8(kEblFontKey));
-  if (!colour.IsOk()) colour = *wxBLACK;
-  return colour;
-}
-
+// Deliberately grayscale: three route waypoints joined by a route line.
 static const char* route_toolbar_xpm[] = {
     "16 16 3 1",
     "  c None",
-    "M c #C000E8",
-    "W c #FFFFFF",
+    "D c #4A4A4A",
+    "L c #A0A0A0",
     "                ",
-    "   W            ",
-    "  WWW           ",
-    "   W            ",
-    "   MMMMM        ",
-    "       M        ",
-    "       M   W    ",
-    "      MMM WWW   ",
-    "       M   W    ",
-    "       MMMMM    ",
-    "           M    ",
-    "           M    ",
-    "          MMM   ",
-    "           M    ",
+    "  DDD           ",
+    "  DDD           ",
+    "    LL          ",
+    "     LL         ",
+    "      DDD       ",
+    "      DDD       ",
+    "         LL     ",
+    "          LL    ",
+    "           DDD  ",
+    "           DDD  ",
+    "                ",
+    "                ",
+    "                ",
     "                ",
     "                "};
 }  // namespace
@@ -103,13 +90,7 @@ route_toolbar_pi::~route_toolbar_pi() = default;
 
 int route_toolbar_pi::Init() {
   m_parent_window = GetOCPNCanvasWindow();
-
-  // Register and instantiate a dedicated OpenCPN font entry.  Merely adding
-  // an auxiliary key is not enough for it to appear in the font chooser until
-  // a matching font descriptor exists, so force creation here at startup.
-  const wxString font_key = wxString::FromUTF8(kEblFontKey);
-  AddPersistentFontKey(font_key);
-  (void)GetOCPNScaledFont_PlugIn(font_key, kEblDefaultFontSize);
+  LoadPersistentState();
 
   m_toolbar_id = InsertPlugInTool(
       _("Route Toolbar"), &m_toolbar_bitmap, &m_toolbar_bitmap, wxITEM_CHECK,
@@ -122,6 +103,7 @@ int route_toolbar_pi::Init() {
 }
 
 bool route_toolbar_pi::DeInit() {
+  SavePersistentState();
   CancelInteractiveTool();
   if (m_dialog) {
     m_dialog->Destroy();
@@ -178,6 +160,25 @@ void route_toolbar_pi::HideToolWindow() {
   SetToolbarItemState(m_toolbar_id, false);
 }
 
+void route_toolbar_pi::SetLabelFontSize(int point_size) {
+  const int clamped = std::clamp(point_size, kMinLabelFontSize,
+                                 kMaxLabelFontSize);
+  if (clamped == m_label_font_size) return;
+
+  m_label_font_size = clamped;
+  SavePersistentState();
+  SetStatus(wxString::Format(_("EBL label size set to %d pt."),
+                             m_label_font_size));
+  if (m_parent_window) RequestRefresh(m_parent_window);
+}
+
+wxFont route_toolbar_pi::GetEblLabelFont() const {
+  wxFont font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+  if (!font.IsOk()) font = *wxNORMAL_FONT;
+  font.SetPointSize(m_label_font_size);
+  return font;
+}
+
 void route_toolbar_pi::BeginEblVrm() {
   if (!m_dialog_visible) ShowToolWindow();
   m_pending_start = RouteWaypointHit{};
@@ -230,9 +231,7 @@ bool route_toolbar_pi::MouseEventHook(wxMouseEvent& event) {
 
   if (!event.LeftDown() || !m_has_cursor) return false;
 
-  // Existing Route Toolbar targets are editable whenever the toolbar window is
-  // open.  Prioritise the target anchor over starting a new EBL/VRM so a click
-  // on the ring/crosshair is unambiguous.
+  // Existing targets stay editable whenever the Route Toolbar window is open.
   if (m_dialog_visible &&
       (m_ebl_mode == EblMode::Idle ||
        m_ebl_mode == EblMode::AwaitRoutePoint)) {
@@ -397,6 +396,8 @@ bool route_toolbar_pi::CommitMoveEblTarget(double target_lat,
   }
 
   m_ebl_vrms[static_cast<size_t>(m_edit_item_index)] = moved;
+  SavePersistentState();
+
   wxString name = moved.target_name;
   if (name.IsEmpty()) name = _("Sight mark");
   SetStatus(name + _(" moved — ") +
@@ -424,6 +425,7 @@ void route_toolbar_pi::RenameEblTarget(int index) {
   if (entered.IsEmpty()) return;
 
   item.target_name = entered;
+  SavePersistentState();
   SetStatus(_("Renamed Route EBL/VRM target to ") + entered + _("."));
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
@@ -441,6 +443,7 @@ void route_toolbar_pi::DeleteEblTarget(int index) {
   m_ebl_vrms.erase(m_ebl_vrms.begin() + index);
   m_edit_item_index = -1;
   m_ebl_mode = EblMode::Idle;
+  SavePersistentState();
   SetStatus(_("Route EBL/VRM target deleted."));
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
@@ -481,8 +484,7 @@ void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
       _("Sight mark %lu"), static_cast<unsigned long>(m_ebl_vrms.size() + 1));
   item.target_name = default_name;
 
-  // Freeze the selected geometry before opening the modal naming dialog. This
-  // prevents the live preview from following the mouse to the dialog buttons.
+  // Freeze the selected geometry before opening the modal naming dialog.
   m_ebl_mode = EblMode::Idle;
   m_ebl_vrms.push_back(item);
   if (m_parent_window) RequestRefresh(m_parent_window);
@@ -500,15 +502,115 @@ void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
     }
   }
 
+  SavePersistentState();
+
   wxString waypoint_name = item.waypoint_name;
   if (waypoint_name.IsEmpty()) waypoint_name = _("Waypoint");
   SetStatus(waypoint_name + _(" → ") + item.target_name + _("  ") +
-            wxString::Format(_("%03.0f°T  %.2f NM. Created with a 30° VRM arc. Click another route waypoint, click an existing target to edit, or right-click to finish."),
+            wxString::Format(_("%03.0f°T  %.2f NM. Saved. Click another route waypoint, click an existing target to edit, or right-click to finish."),
                              item.bearing_true, item.range_nm));
 
   m_pending_start = RouteWaypointHit{};
   m_ebl_mode = EblMode::AwaitRoutePoint;
   if (m_parent_window) RequestRefresh(m_parent_window);
+}
+
+void route_toolbar_pi::LoadPersistentState() {
+  m_ebl_vrms.clear();
+
+  wxFileConfig* config = GetOCPNConfigObject();
+  if (!config) return;
+
+  const wxString old_path = config->GetPath();
+  config->SetPath(wxString::FromUTF8(kConfigPath));
+
+  long font_size = kDefaultLabelFontSize;
+  config->Read("LabelFontSize", &font_size,
+               static_cast<long>(kDefaultLabelFontSize));
+  m_label_font_size = std::clamp(static_cast<int>(font_size),
+                                 kMinLabelFontSize, kMaxLabelFontSize);
+
+  config->SetPath("EBLVRM");
+  long count = 0;
+  config->Read("Count", &count, 0L);
+  count = std::clamp(count, 0L, 1000L);
+
+  for (long i = 0; i < count; ++i) {
+    const wxString prefix = wxString::Format("Item%03ld/", i);
+    RouteEblVrm item;
+
+    const bool have_start_lat =
+        config->Read(prefix + "StartLat", &item.start_lat);
+    const bool have_start_lon =
+        config->Read(prefix + "StartLon", &item.start_lon);
+    const bool have_target_lat =
+        config->Read(prefix + "TargetLat", &item.target_lat);
+    const bool have_target_lon =
+        config->Read(prefix + "TargetLon", &item.target_lon);
+
+    if (!(have_start_lat && have_start_lon && have_target_lat &&
+          have_target_lon))
+      continue;
+
+    config->Read(prefix + "ArcWidthDeg", &item.arc_width_deg,
+                 kDefaultArcWidthDeg);
+    config->Read(prefix + "RouteGuid", &item.route_guid, wxEmptyString);
+    config->Read(prefix + "RouteName", &item.route_name, wxEmptyString);
+    config->Read(prefix + "WaypointGuid", &item.waypoint_guid, wxEmptyString);
+    config->Read(prefix + "WaypointName", &item.waypoint_name, wxEmptyString);
+    config->Read(prefix + "TargetName", &item.target_name, wxEmptyString);
+
+    const bool valid_coordinates =
+        std::isfinite(item.start_lat) && std::isfinite(item.start_lon) &&
+        std::isfinite(item.target_lat) && std::isfinite(item.target_lon) &&
+        item.start_lat >= -90.0 && item.start_lat <= 90.0 &&
+        item.target_lat >= -90.0 && item.target_lat <= 90.0 &&
+        item.start_lon >= -180.0 && item.start_lon <= 180.0 &&
+        item.target_lon >= -180.0 && item.target_lon <= 180.0;
+    if (!valid_coordinates) continue;
+
+    if (!std::isfinite(item.arc_width_deg) || item.arc_width_deg <= 0.0 ||
+        item.arc_width_deg > 180.0)
+      item.arc_width_deg = kDefaultArcWidthDeg;
+
+    RecalculateEbl(item);
+    if (item.range_nm >= 0.001) m_ebl_vrms.push_back(item);
+  }
+
+  config->SetPath(old_path);
+}
+
+void route_toolbar_pi::SavePersistentState() const {
+  wxFileConfig* config = GetOCPNConfigObject();
+  if (!config) return;
+
+  const wxString old_path = config->GetPath();
+  config->SetPath(wxString::FromUTF8(kConfigPath));
+  config->Write("LabelFontSize", static_cast<long>(m_label_font_size));
+
+  config->DeleteGroup("EBLVRM");
+  config->SetPath("EBLVRM");
+  config->Write("Count", static_cast<long>(m_ebl_vrms.size()));
+
+  for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
+    const wxString prefix = wxString::Format(
+        "Item%03lu/", static_cast<unsigned long>(i));
+    const RouteEblVrm& item = m_ebl_vrms[i];
+
+    config->Write(prefix + "StartLat", item.start_lat);
+    config->Write(prefix + "StartLon", item.start_lon);
+    config->Write(prefix + "TargetLat", item.target_lat);
+    config->Write(prefix + "TargetLon", item.target_lon);
+    config->Write(prefix + "ArcWidthDeg", item.arc_width_deg);
+    config->Write(prefix + "RouteGuid", item.route_guid);
+    config->Write(prefix + "RouteName", item.route_name);
+    config->Write(prefix + "WaypointGuid", item.waypoint_guid);
+    config->Write(prefix + "WaypointName", item.waypoint_name);
+    config->Write(prefix + "TargetName", item.target_name);
+  }
+
+  config->SetPath(old_path);
+  config->Flush();
 }
 
 bool route_toolbar_pi::RenderOverlay(wxDC& dc, PlugIn_ViewPort* vp) {
@@ -703,7 +805,7 @@ void route_toolbar_pi::DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp,
   dc.SetBrush(wxBrush(wxColour(255, 245, 150)));
   dc.DrawRectangle(text_pos.x - 4, text_pos.y - 3, text_width + 8,
                    text_height + 6);
-  dc.SetTextForeground(GetEblLabelColour());
+  dc.SetTextForeground(*wxBLACK);
   int text_y = text_pos.y;
   if (!first_line.IsEmpty()) {
     dc.DrawText(first_line, text_pos.x, text_y);
@@ -801,7 +903,6 @@ void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
   if (label.IsEmpty()) return;
 
   const wxFont font = GetEblLabelFont();
-  const wxColour text_colour = GetEblLabelColour();
   const int newline = label.Find('\n');
   const wxString first_line =
       newline == wxNOT_FOUND ? label : label.Left(static_cast<size_t>(newline));
@@ -828,7 +929,7 @@ void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
   bitmap_dc.SetBackground(wxBrush(wxColour(255, 245, 150)));
   bitmap_dc.Clear();
   bitmap_dc.SetFont(font);
-  bitmap_dc.SetTextForeground(text_colour);
+  bitmap_dc.SetTextForeground(*wxBLACK);
   bitmap_dc.DrawText(first_line, 4, 3);
   if (!second_line.IsEmpty())
     bitmap_dc.DrawText(second_line, 4, 3 + first_extent.y + line_gap);
