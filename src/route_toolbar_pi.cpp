@@ -8,9 +8,18 @@
 
 #include <wx/brush.h>
 #include <wx/dc.h>
+#include <wx/dcmemory.h>
+#include <wx/image.h>
 #include <wx/intl.h>
 #include <wx/pen.h>
+#include <wx/settings.h>
 #include <wx/textdlg.h>
+
+#ifdef __APPLE__
+#include <OpenGL/gl.h>
+#else
+#include <GL/gl.h>
+#endif
 
 #include "route_toolbar_dialog.h"
 
@@ -27,7 +36,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 2;
-constexpr int kPluginVersionPatch = 0;
+constexpr int kPluginVersionPatch = 1;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kDefaultArcWidthDeg = 90.0;
 constexpr int kArcSegments = 30;
@@ -75,7 +84,8 @@ int route_toolbar_pi::Init() {
       nullptr, -1, 0, this);
 
   return WANTS_TOOLBAR_CALLBACK | INSTALLS_TOOLBAR_TOOL |
-         WANTS_CURSOR_LATLON | WANTS_MOUSE_EVENTS | WANTS_OVERLAY_CALLBACK;
+         WANTS_CURSOR_LATLON | WANTS_MOUSE_EVENTS | WANTS_OVERLAY_CALLBACK |
+         WANTS_OPENGL_OVERLAY_CALLBACK;
 }
 
 bool route_toolbar_pi::DeInit() {
@@ -322,6 +332,67 @@ bool route_toolbar_pi::RenderOverlay(wxDC& dc, PlugIn_ViewPort* vp) {
   return rendered;
 }
 
+bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
+  if (!vp || !vp->bValid || vp->pix_width <= 0 || vp->pix_height <= 0)
+    return false;
+
+  bool rendered = false;
+
+  GLint previous_matrix_mode = GL_MODELVIEW;
+  glGetIntegerv(GL_MATRIX_MODE, &previous_matrix_mode);
+  glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+  glMatrixMode(GL_PROJECTION);
+  glPushMatrix();
+  glLoadIdentity();
+  glOrtho(0.0, static_cast<double>(vp->pix_width),
+          static_cast<double>(vp->pix_height), 0.0, -1.0, 1.0);
+
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+  glLoadIdentity();
+
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_CULL_FACE);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  for (const auto& item : m_ebl_vrms) {
+    DrawEblVrmGL(vp, item, false);
+    rendered = true;
+  }
+
+  if (m_ebl_mode == EblMode::AwaitTarget && m_pending_start.found &&
+      m_has_cursor) {
+    RouteEblVrm preview;
+    preview.start_lat = m_pending_start.lat;
+    preview.start_lon = m_pending_start.lon;
+    preview.target_lat = m_cursor_lat;
+    preview.target_lon = m_cursor_lon;
+    preview.arc_width_deg = kDefaultArcWidthDeg;
+    preview.waypoint_name = m_pending_start.waypoint_name;
+
+    DistanceBearingMercator_Plugin(
+        preview.start_lat, preview.start_lon, preview.target_lat,
+        preview.target_lon, &preview.bearing_true, &preview.range_nm);
+    preview.bearing_true = NormalizeBearing(preview.bearing_true);
+
+    if (preview.range_nm >= 0.001) {
+      DrawEblVrmGL(vp, preview, true);
+      rendered = true;
+    }
+  }
+
+  glMatrixMode(GL_MODELVIEW);
+  glPopMatrix();
+  glMatrixMode(GL_PROJECTION);
+  glPopMatrix();
+  glMatrixMode(previous_matrix_mode);
+  glPopAttrib();
+
+  return rendered;
+}
+
 void route_toolbar_pi::DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp,
                                   const RouteEblVrm& item,
                                   bool preview) const {
@@ -381,6 +452,112 @@ void route_toolbar_pi::DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp,
   dc.SetPen(old_pen);
   dc.SetBrush(old_brush);
   dc.SetTextForeground(old_text);
+}
+
+void route_toolbar_pi::DrawEblVrmGL(PlugIn_ViewPort* vp,
+                                    const RouteEblVrm& item,
+                                    bool preview) const {
+  wxPoint start_px;
+  wxPoint target_px;
+  GetCanvasPixLL(vp, &start_px, item.start_lat, item.start_lon);
+  GetCanvasPixLL(vp, &target_px, item.target_lat, item.target_lon);
+
+  if (preview)
+    glColor4ub(150, 0, 170, 190);
+  else
+    glColor4ub(210, 0, 220, 255);
+
+  glDisable(GL_TEXTURE_2D);
+  glLineWidth(preview ? 1.0f : 2.0f);
+
+  glBegin(GL_LINES);
+  glVertex2i(start_px.x, start_px.y);
+  glVertex2i(target_px.x, target_px.y);
+  glEnd();
+
+  const double half_arc = item.arc_width_deg / 2.0;
+  glBegin(GL_LINE_STRIP);
+  for (int i = 0; i <= kArcSegments; ++i) {
+    const double fraction = static_cast<double>(i) / kArcSegments;
+    const double arc_bearing = NormalizeBearing(
+        item.bearing_true - half_arc + fraction * item.arc_width_deg);
+    double arc_lat = 0.0;
+    double arc_lon = 0.0;
+    PositionBearingDistanceMercator_Plugin(
+        item.start_lat, item.start_lon, arc_bearing, item.range_nm,
+        &arc_lat, &arc_lon);
+    wxPoint arc_px;
+    GetCanvasPixLL(vp, &arc_px, arc_lat, arc_lon);
+    glVertex2i(arc_px.x, arc_px.y);
+  }
+  glEnd();
+
+  glPointSize(preview ? 6.0f : 8.0f);
+  glBegin(GL_POINTS);
+  glVertex2i(start_px.x, start_px.y);
+  glVertex2i(target_px.x, target_px.y);
+  glEnd();
+
+  wxString label;
+  if (!preview && !item.target_name.IsEmpty()) label = item.target_name + _("  ");
+  label += wxString::Format(_("%03.0f°T  %.2f NM"), item.bearing_true,
+                            item.range_nm);
+  DrawGlLabel(label, target_px.x + 8, target_px.y - 28);
+}
+
+void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
+  if (label.IsEmpty()) return;
+
+  const wxFont font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+  wxBitmap measure_bitmap(1, 1, 24);
+  wxMemoryDC measure_dc(measure_bitmap);
+  measure_dc.SetFont(font);
+  const wxSize extent = measure_dc.GetTextExtent(label);
+  measure_dc.SelectObject(wxNullBitmap);
+
+  const int width = std::max(1, extent.x + 8);
+  const int height = std::max(1, extent.y + 6);
+  wxBitmap bitmap(width, height, 24);
+  wxMemoryDC bitmap_dc(bitmap);
+  bitmap_dc.SetBackground(wxBrush(wxColour(255, 245, 150)));
+  bitmap_dc.Clear();
+  bitmap_dc.SetFont(font);
+  bitmap_dc.SetTextForeground(*wxBLACK);
+  bitmap_dc.DrawText(label, 4, 3);
+  bitmap_dc.SelectObject(wxNullBitmap);
+
+  wxImage image = bitmap.ConvertToImage();
+  if (!image.IsOk() || !image.GetData()) return;
+
+  GLuint texture = 0;
+  glGenTextures(1, &texture);
+  if (!texture) return;
+
+  glBindTexture(GL_TEXTURE_2D, texture);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.GetWidth(), image.GetHeight(),
+               0, GL_RGB, GL_UNSIGNED_BYTE, image.GetData());
+
+  glEnable(GL_TEXTURE_2D);
+  glColor4ub(255, 255, 255, 255);
+  glBegin(GL_QUADS);
+  glTexCoord2f(0.0f, 0.0f);
+  glVertex2i(x, y);
+  glTexCoord2f(1.0f, 0.0f);
+  glVertex2i(x + width, y);
+  glTexCoord2f(1.0f, 1.0f);
+  glVertex2i(x + width, y + height);
+  glTexCoord2f(0.0f, 1.0f);
+  glVertex2i(x, y + height);
+  glEnd();
+  glDisable(GL_TEXTURE_2D);
+
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glDeleteTextures(1, &texture);
 }
 
 double route_toolbar_pi::NormalizeBearing(double bearing) {
