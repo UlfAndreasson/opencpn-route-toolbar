@@ -72,6 +72,7 @@ private:
     Idle,
     AwaitRoutePoint,
     AwaitTarget,
+    MoveExistingTarget,
   };
 
   void ShowToolWindow();
@@ -79,6 +80,14 @@ private:
   void SetStatus(const wxString& text);
   RouteWaypointHit FindNearestRouteWaypoint(double lat, double lon,
                                             double max_distance_nm) const;
+  int FindNearestEblTarget(double lat, double lon,
+                           double max_distance_nm) const;
+  void ShowEblTargetActions(int index);
+  void BeginMoveEblTarget(int index);
+  bool CommitMoveEblTarget(double target_lat, double target_lon);
+  void RenameEblTarget(int index);
+  void DeleteEblTarget(int index);
+  void RecalculateEbl(RouteEblVrm& item) const;
   void CompleteEblVrm(double target_lat, double target_lon);
   void DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp, const RouteEblVrm& item,
                   bool preview) const;
@@ -96,6 +105,7 @@ private:
   EblMode m_ebl_mode{EblMode::Idle};
   RouteWaypointHit m_pending_start;
   std::vector<RouteEblVrm> m_ebl_vrms;
+  int m_edit_item_index{-1};
   double m_cursor_lat{0.0};
   double m_cursor_lon{0.0};
   bool m_has_cursor{false};
