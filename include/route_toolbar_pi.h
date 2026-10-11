@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <wx/bitmap.h>
+#include <wx/colour.h>
 #include <wx/font.h>
 #include <wx/window.h>
 
@@ -53,6 +54,21 @@ public:
 
   int GetLabelFontSize() const { return m_label_font_size; }
   void SetLabelFontSize(int point_size);
+
+  const wxColour& GetEblColour() const { return m_ebl_colour; }
+  const wxColour& GetPilColour() const { return m_pil_colour; }
+  void SetEblColour(const wxColour& colour) {
+    if (!colour.IsOk()) return;
+    m_ebl_colour = colour;
+    SavePersistentState();
+    if (m_parent_window) RequestRefresh(m_parent_window);
+  }
+  void SetPilColour(const wxColour& colour) {
+    if (!colour.IsOk()) return;
+    m_pil_colour = colour;
+    SavePersistentState();
+    if (m_parent_window) RequestRefresh(m_parent_window);
+  }
 
 private:
   struct RouteWaypointHit {
@@ -205,6 +221,8 @@ private:
   int m_edit_pil_index{-1};
 
   int m_label_font_size{14};
+  wxColour m_ebl_colour{210, 0, 220};
+  wxColour m_pil_colour{0, 105, 125};
   double m_cursor_lat{0.0};
   double m_cursor_lon{0.0};
   bool m_has_cursor{false};
