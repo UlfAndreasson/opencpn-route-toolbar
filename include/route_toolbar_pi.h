@@ -48,6 +48,7 @@ public:
   void ExportRoutePdfReport();
   void CancelInteractiveTool();
   void OnDialogHidden();
+  void EnsureContextMenu();
 
   int GetLabelFontSize() const { return m_label_font_size; }
   void SetLabelFontSize(int point_size);
