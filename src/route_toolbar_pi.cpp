@@ -43,7 +43,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 3;
-constexpr int kPluginVersionPatch = 1;
+constexpr int kPluginVersionPatch = 2;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kDefaultArcWidthDeg = 30.0;
@@ -87,11 +87,11 @@ wxString EnsureToolbarSvg() {
 
   const wxString path = dir + wxFILE_SEP_PATH + "route-toolbar.svg";
   static const char* svg = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <rect x="2.8" y="2.8" width="26.4" height="26.4" rx="4.2" fill="#4d5052" stroke="#9da2a6" stroke-width="0.65"/>
-  <path d="M6.8 8.8 L15.5 18.8 L25.2 10.8" fill="none" stroke="#bcc1c5" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="6.8" cy="8.8" r="2.55" fill="#4d5052" stroke="#bcc1c5" stroke-width="1.4"/>
-  <circle cx="15.5" cy="18.8" r="2.55" fill="#4d5052" stroke="#bcc1c5" stroke-width="1.4"/>
-  <circle cx="25.2" cy="10.8" r="2.55" fill="#4d5052" stroke="#bcc1c5" stroke-width="1.4"/>
+  <rect x="1.6" y="1.6" width="28.8" height="28.8" rx="4.8" fill="#4f5255" stroke="#c9cccf" stroke-width="0.45"/>
+  <path d="M7.2 8.5 L15.5 19 L24.8 10.5" fill="none" stroke="#d6d9dc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="7.2" cy="8.5" r="2.8" fill="#4f5255" stroke="#d6d9dc" stroke-width="1.55"/>
+  <circle cx="15.5" cy="19" r="2.8" fill="#4f5255" stroke="#d6d9dc" stroke-width="1.55"/>
+  <circle cx="24.8" cy="10.5" r="2.8" fill="#4f5255" stroke="#d6d9dc" stroke-width="1.55"/>
 </svg>)SVG";
 
   wxFFile file(path, "wb");
@@ -105,6 +105,39 @@ wxColour PreviewColour(const wxColour& c) {
   return wxColour((static_cast<int>(c.Red()) + 255) / 2,
                   (static_cast<int>(c.Green()) + 255) / 2,
                   (static_cast<int>(c.Blue()) + 255) / 2);
+}
+
+wxPoint PlaceLabelBoxAwayFromStart(const wxPoint& start, const wxPoint& target,
+                                   int box_width, int box_height,
+                                   int canvas_width, int canvas_height) {
+  int x = target.x >= start.x
+              ? target.x + kLabelOffsetXPx
+              : target.x - kLabelOffsetXPx - box_width;
+  int y = target.y >= start.y
+              ? target.y + kLabelOffsetYPx
+              : target.y - kLabelOffsetYPx - box_height;
+
+  const int max_x = std::max(4, canvas_width - box_width - 4);
+  const int max_y = std::max(4, canvas_height - box_height - 4);
+  x = std::clamp(x, 4, max_x);
+  y = std::clamp(y, 4, max_y);
+  return wxPoint(x, y);
+}
+
+wxPoint ClosestPointOnLabelBox(const wxPoint& target, const wxPoint& box,
+                               int box_width, int box_height) {
+  return wxPoint(std::clamp(target.x, box.x, box.x + box_width),
+                 std::clamp(target.y, box.y, box.y + box_height));
+}
+
+wxPoint PointOnTargetRingTowards(const wxPoint& target, const wxPoint& towards,
+                                 int radius) {
+  const double dx = static_cast<double>(towards.x - target.x);
+  const double dy = static_cast<double>(towards.y - target.y);
+  const double length = std::hypot(dx, dy);
+  if (length < 0.5) return target;
+  return wxPoint(target.x + static_cast<int>(std::lround(radius * dx / length)),
+                 target.y + static_cast<int>(std::lround(radius * dy / length)));
 }
 }  // namespace
 
@@ -863,14 +896,20 @@ void route_toolbar_pi::DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp,
   const int line_gap = first_line.IsEmpty() ? 0 : 2;
   const int text_width = std::max(first_size.x, second_size.x);
   const int text_height = first_size.y + line_gap + second_size.y;
-  const wxPoint text_pos(target_px.x + kLabelOffsetXPx,
-                         target_px.y - text_height - kLabelOffsetYPx);
+  const int box_width = text_width + 8;
+  const int box_height = text_height + 6;
+  const wxPoint box_pos = PlaceLabelBoxAwayFromStart(
+      start_px, target_px, box_width, box_height, vp->pix_width, vp->pix_height);
+  const wxPoint text_pos(box_pos.x + 4, box_pos.y + 3);
+  const wxPoint leader_end = ClosestPointOnLabelBox(
+      target_px, box_pos, box_width, box_height);
+  const wxPoint leader_start = PointOnTargetRingTowards(
+      target_px, leader_end, preview ? 5 : kTargetRingRadiusPx);
   dc.SetPen(wxPen(line_colour, 1, wxPENSTYLE_SOLID));
-  dc.DrawLine(target_px.x + kTargetRingRadiusPx, target_px.y - kTargetRingRadiusPx,
-              text_pos.x - 4, text_pos.y + text_height / 2);
+  dc.DrawLine(leader_start, leader_end);
   dc.SetPen(*wxTRANSPARENT_PEN);
   dc.SetBrush(wxBrush(wxColour(255, 245, 150)));
-  dc.DrawRectangle(text_pos.x - 4, text_pos.y - 3, text_width + 8, text_height + 6);
+  dc.DrawRectangle(box_pos.x, box_pos.y, box_width, box_height);
   dc.SetTextForeground(*wxBLACK);
   int text_y = text_pos.y;
   if (!first_line.IsEmpty()) {
@@ -933,18 +972,40 @@ void route_toolbar_pi::DrawEblVrmGL(PlugIn_ViewPort* vp,
                                                    item.bearing_true, item.range_nm);
   wxString label = bearing_range;
   if (!preview && !item.target_name.IsEmpty()) label = item.target_name + _("\n") + bearing_range;
+
   const wxFont font = GetEblLabelFont();
-  const int approximate_height = std::max(18, font.GetPixelSize().y);
-  const int label_x = target_px.x + kLabelOffsetXPx;
-  const int label_y = target_px.y -
-                      (preview ? approximate_height + kLabelOffsetYPx
-                               : 2 * approximate_height + kLabelOffsetYPx);
+  const int newline = label.Find('\n');
+  const wxString first_line = newline == wxNOT_FOUND
+                                  ? label
+                                  : label.Left(static_cast<size_t>(newline));
+  const wxString second_line = newline == wxNOT_FOUND
+                                   ? wxString()
+                                   : label.Mid(static_cast<size_t>(newline + 1));
+  wxBitmap measure_bitmap(1, 1, 24);
+  wxMemoryDC measure_dc(measure_bitmap);
+  measure_dc.SetFont(font);
+  const wxSize first_extent = measure_dc.GetTextExtent(first_line);
+  const wxSize second_extent = second_line.IsEmpty()
+                                   ? wxSize(0, 0)
+                                   : measure_dc.GetTextExtent(second_line);
+  measure_dc.SelectObject(wxNullBitmap);
+  const int line_gap = second_line.IsEmpty() ? 0 : 2;
+  const int text_width = std::max(first_extent.x, second_extent.x);
+  const int text_height = first_extent.y + line_gap + second_extent.y;
+  const int box_width = std::max(1, text_width + 8);
+  const int box_height = std::max(1, text_height + 6);
+  const wxPoint box_pos = PlaceLabelBoxAwayFromStart(
+      start_px, target_px, box_width, box_height, vp->pix_width, vp->pix_height);
+  const wxPoint leader_end = ClosestPointOnLabelBox(
+      target_px, box_pos, box_width, box_height);
+  const wxPoint leader_start = PointOnTargetRingTowards(target_px, leader_end, ring);
+
   glColor4ub(colour.Red(), colour.Green(), colour.Blue(), preview ? 190 : 255);
   glBegin(GL_LINES);
-  glVertex2i(target_px.x + ring, target_px.y - ring);
-  glVertex2i(label_x - 4, label_y + approximate_height);
+  glVertex2i(leader_start.x, leader_start.y);
+  glVertex2i(leader_end.x, leader_end.y);
   glEnd();
-  DrawGlLabel(label, label_x, label_y);
+  DrawGlLabel(label, box_pos.x, box_pos.y);
 }
 
 void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
