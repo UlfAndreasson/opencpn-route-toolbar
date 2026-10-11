@@ -8,7 +8,7 @@
 
 class RouteToolbarDialog;
 
-class route_toolbar_pi final : public opencpn_plugin_118 {
+class route_toolbar_pi final : public opencpn_plugin_121 {
 public:
   explicit route_toolbar_pi(void* ppimgr);
   ~route_toolbar_pi() override;
