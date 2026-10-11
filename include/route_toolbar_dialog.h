@@ -3,6 +3,8 @@
 
 #include <wx/dialog.h>
 
+class wxColourPickerCtrl;
+class wxColourPickerEvent;
 class wxSpinCtrl;
 class wxStaticText;
 class wxToggleButton;
@@ -20,11 +22,15 @@ private:
   void OnReport(wxCommandEvent& event);
   void OnLabelSize(wxSpinEvent& event);
   void OnLabelSizeText(wxCommandEvent& event);
+  void OnEblColour(wxColourPickerEvent& event);
+  void OnPilColour(wxColourPickerEvent& event);
   void OnClose(wxCloseEvent& event);
 
   route_toolbar_pi* m_plugin{nullptr};
   wxToggleButton* m_ebl_button{nullptr};
   wxToggleButton* m_pil_button{nullptr};
   wxSpinCtrl* m_label_size{nullptr};
+  wxColourPickerCtrl* m_ebl_colour{nullptr};
+  wxColourPickerCtrl* m_pil_colour{nullptr};
   wxStaticText* m_status{nullptr};
 };
