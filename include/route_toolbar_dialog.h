@@ -17,6 +17,7 @@ private:
   void OnPil(wxCommandEvent& event);
   void OnReport(wxCommandEvent& event);
   void OnLabelSize(wxSpinEvent& event);
+  void OnLabelSizeText(wxCommandEvent& event);
   void OnClose(wxCloseEvent& event);
 
   route_toolbar_pi* m_plugin{nullptr};
