@@ -1,133 +1,217 @@
-# Route Toolbar — Initial Functional Specification
+# Route Toolbar — Functional Specification
 
-## Scope for v0.1
+## Version 0.4.0 scope
 
-The first usable version should solve three concrete passage-planning workflows:
+Route Toolbar currently covers four primary workflows:
 
-1. Create route-aware EBL/VRM objects with a short VRM arc.
-2. Create route-aware PIL offsets directly from route legs.
-3. Export route + pilotage data as one report.
+1. Route/Mark based EBL/VRM
+2. Route-leg based Parallel Index Lines
+3. PDF/CSV Route Report
+4. Complete GPX route-package import/export
 
-## Route EBL/VRM
+## EBL / VRM
 
-### Interaction
-1. Activate **Route EBL/VRM** from the Route Toolbar.
-2. Click a route waypoint or a point on a route leg.
-3. Click the target/sight mark.
-4. Freeze the selected EBL/VRM geometry while the naming dialog is open.
-5. Enter or edit target name/description.
-6. Object is stored and remains editable after restart.
+### Start point
+
+An EBL/VRM can originate from:
+
+- an OpenCPN route waypoint
+- a standalone OpenCPN Mark
+
+For a route waypoint the plugin stores route and waypoint identity.
+
+For a standalone Mark the plugin stores the Mark GUID and refreshes the origin
+from OpenCPN.
+
+### Target
+
+Stored target information:
+
+- latitude
+- longitude
+- name
+- true bearing
+- range NM
 
 ### Display
-- EBL line from route point to target.
-- Default VRM arc: 30° total, centred on the EBL bearing (±15°).
-- Arc radius equals target range.
-- The arc is intended as a compact visual range marker, not as a full VRM circle.
-- Optional configurable arc width and orientation later.
-- Bearing is the true bearing from the route point to the target.
-- Bearing and range displayed near the object.
-- EBL/VRM information font should be configurable independently from hover tooltip font.
 
-### Stored data
-- UUID
-- Route GUID/name
-- Route waypoint GUID/name when applicable
-- Route leg start/end GUID when applicable
-- Origin latitude/longitude
-- Target latitude/longitude
-- Target name / description
-- True bearing
-- Range in NM
-- Arc start/end angle or arc width
-- Visible/hidden
-- Persistent state
-- Style settings
+The chart overlay contains:
 
-## Route PIL
+- EBL line
+- target ring/crosshair
+- compact VRM arc
+- yellow information label
 
-### Interaction
-1. Activate **Route PIL**.
-2. Click an existing route leg.
-3. Plugin reads the leg course directly.
-4. Set port and/or starboard offsets.
-5. PIL remains geographically fixed to that route leg until explicitly changed.
+Default VRM arc:
+
+- width: 30 degrees
+- orientation: centred on the EBL bearing
+
+### Labels
+
+Requirements:
+
+- stable positioning between redraws
+- no frame-to-frame dynamic reshuffling
+- off-screen target labels are hidden
+- manual positioning is supported
+- manual position survives restart
+- manual position can be reset
+- configurable font size
+
+### Editing
+
+EBL/VRM actions:
+
+- Move target
+- Move label
+- Reset label position
+- Rename
+- Delete
+
+## Parallel Index Line
+
+### Creation
+
+1. Select Route PIL
+2. Select existing route leg
+3. Select geographic anchor point
+
+The existing route leg is the reference centreline.
+
+### Offset convention
+
+- positive offset = SB / starboard
+- negative offset = BB / port
 
 ### Behaviour
-- No separate manually positioned centreline required.
-- Updating an offset must not re-centre the PIL on Own Ship.
-- Route geometry is reference-only; Route Toolbar must not silently alter the route.
-- Multiple offsets per side may be supported later, but v0.1 requires one port and one starboard offset.
+
+- PIL remains tied to the selected route leg
+- editing must not recenter it on Own Ship
+- multiple PIL objects may exist on one leg
+- graphical editing uses a live preview
+- original PIL should not remain duplicated while moving
 
 ### Stored data
-- UUID
-- Route GUID/name
-- Route leg start/end GUID
-- Leg course
-- Port offset NM (optional)
-- Starboard offset NM (optional)
-- Visible/hidden
-- Persistent state
-- Style settings
 
-## Route Report
-
-### v0.1 output
-- CSV
-- Printable HTML
-
-### Route-level data
-- Route name
-- Total distance
-- Export timestamp
-
-### Per waypoint / leg
-- Waypoint sequence
-- Waypoint name
-- Description
-- Latitude / longitude
-- Course to next waypoint
-- Leg distance
-- EBL/VRM target 1..n
-  - target name
-  - target position
-  - bearing true
-  - range NM
-  - arc width
-- PIL
-  - port offset NM
-  - starboard offset NM
-- Notes
-
-The report should not assume exactly two EBL targets. The UI may optimise for two common sight marks, while the data model supports 0..n targets per waypoint/leg.
-
-## Manager
-
-Preferred outcome: Route Toolbar objects should be manageable in one central manager with:
-- show/hide
-- properties/edit
-- delete
-- centre view
-- export
-- filtering by route
-
-Re-use/integration with OCPN Draw Path & Point Manager should be investigated before creating a separate manager.
+- route GUID/name
+- leg index
+- from/to waypoint GUID/name
+- route leg endpoints
+- leg course
+- leg distance
+- anchor position
+- signed offset NM
+- rendered line endpoints
 
 ## Persistence
 
-Persistence must be deterministic across normal OpenCPN restarts. Route Toolbar should not rely on transient state such as Own Ship position for fixed route-planning objects.
+Persisted information includes:
 
-## Future work
+- EBL/VRM objects
+- PIL objects
+- route/waypoint associations
+- standalone Mark associations
+- colours
+- label size
+- manual label positions
 
-### Turning / WOP
-- Configurable turning radius
-- Calculate Wheel-Over Point from incoming/outgoing legs
-- Draw turn arc
-- Flag overlapping/impossible turns
-- Include WOP/turn data in Route Report
+State loading is delayed until OpenCPN navigation objects are available.
 
-### Additional report fields
-- Magnetic bearing/course
-- Safety depth / UKC notes
-- Tidal/current notes
-- ETA/ETD
-- Remarks / contingency notes
+An unloaded plugin must never overwrite valid persisted state with an empty
+object set during shutdown.
+
+## Route Report
+
+Output:
+
+- PDF A4 landscape
+- UTF-8 semicolon-separated CSV
+
+Route-level information:
+
+- route name
+- export timestamp
+- total route distance
+
+Waypoint/leg information:
+
+- waypoint sequence
+- waypoint name
+- waypoint coordinates
+- course to next waypoint
+- leg distance
+- zero or more PIL entries
+- zero or more EBL/VRM entries
+
+PIL format:
+
+```text
+SB: 0.02 NM
+BB: 0.03 NM
+```
+
+EBL/VRM fields:
+
+- sight-mark name
+- bearing °T
+- range NM
+- sight-mark latitude
+- sight-mark longitude
+
+Mark-origin EBL/VRM objects are exported in a separate report section.
+
+## GPX package
+
+Route Toolbar GPX packages use standard GPX 1.1.
+
+Standard objects:
+
+- `<rte>`
+- `<rtept>`
+- referenced `<wpt>`
+
+Plugin data uses:
+
+```text
+https://nubisor.se/opencpn/route-toolbar/1
+```
+
+under GPX `<extensions>`.
+
+Import modes:
+
+- Import as new
+- Replace existing
+
+Route-based EBL/VRM imports must resolve the imported waypoint GUID and use the
+exact OpenCPN waypoint coordinate as origin.
+
+Mark-based EBL/VRM imports must resolve the Mark GUID.
+
+See [GPX_FORMAT.md](GPX_FORMAT.md).
+
+## Context menu
+
+Chart context-menu registration is deferred until OpenCPN initialization has
+completed sufficiently for navigation objects and UI hooks to be safe.
+
+## Rendering
+
+Supported:
+
+- wxDC overlay rendering
+- OpenGL overlay rendering
+
+macOS OpenGL deprecation warnings are expected during compilation and are not
+build failures.
+
+## Safety constraints
+
+Route Toolbar must:
+
+- preserve route/waypoint/Mark relationships
+- avoid duplicate planning objects during replace-import
+- avoid silently changing source route geometry
+- preserve valid persistent state
+- treat reports as planning output, not authoritative navigation data

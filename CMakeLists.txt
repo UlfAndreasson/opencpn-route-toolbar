@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(route_toolbar_pi VERSION 0.3.1 LANGUAGES CXX)
+project(route_toolbar_pi VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,7 +15,7 @@ if(APPLE AND NOT wxWidgets_CONFIG_EXECUTABLE)
   endif()
 endif()
 
-find_package(wxWidgets REQUIRED COMPONENTS core base)
+find_package(wxWidgets REQUIRED COMPONENTS core base xml)
 include(${wxWidgets_USE_FILE})
 
 if(DEFINED wxWidgets_VERSION_STRING AND NOT wxWidgets_VERSION_STRING MATCHES "^3\\.2\\.")
@@ -36,6 +36,7 @@ add_library(route_toolbar_pi SHARED
   src/route_toolbar_dialog.cpp
   src/route_report.cpp
   src/route_report_pdf.cpp
+  src/route_gpx.cpp
   src/route_pil.cpp
   src/route_context.cpp
 )

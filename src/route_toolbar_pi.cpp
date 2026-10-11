@@ -43,8 +43,8 @@
 
 namespace {
 constexpr int kPluginVersionMajor = 0;
-constexpr int kPluginVersionMinor = 3;
-constexpr int kPluginVersionPatch = 1;
+constexpr int kPluginVersionMinor = 4;
+constexpr int kPluginVersionPatch = 0;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kDefaultArcWidthDeg = 30.0;
@@ -88,33 +88,17 @@ wxString EnsureToolbarSvg() {
 
   const wxString path = dir + wxFILE_SEP_PATH + "route-toolbar.svg";
   static const char* svg = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <rect x="2.5" y="2.5" width="27" height="27"
-        rx="1.2"
-        fill="#4f5255"
-        stroke="#bfc3c6"
-        stroke-width="0.45"/>
-
-  <path d="M8.8 9.3 L15.7 18.2 L23.1 11.1"
-        fill="none"
-        stroke="#c5c9cc"
-        stroke-width="1.25"
-        stroke-linecap="round"
-        stroke-linejoin="round"/>
-
-  <circle cx="8.8" cy="9.3" r="2.0"
-          fill="#4f5255"
-          stroke="#c5c9cc"
-          stroke-width="1.1"/>
-
-  <circle cx="15.7" cy="18.2" r="2.0"
-          fill="#4f5255"
-          stroke="#c5c9cc"
-          stroke-width="1.1"/>
-
-  <circle cx="23.1" cy="11.1" r="2.0"
-          fill="#4f5255"
-          stroke="#c5c9cc"
-          stroke-width="1.1"/>
+  <rect x="2.6" y="2.6" width="26.8" height="26.8" rx="2.0"
+        fill="#505356" stroke="#b9bec2" stroke-width="0.55"/>
+  <path d="M8.4 9.1 L15.8 19.7 L23.6 11.2"
+        fill="none" stroke="#d0d4d7" stroke-width="1.45"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="8.4" cy="9.1" r="2.25"
+          fill="#505356" stroke="#d0d4d7" stroke-width="1.20"/>
+  <circle cx="15.8" cy="19.7" r="2.25"
+          fill="#505356" stroke="#d0d4d7" stroke-width="1.20"/>
+  <circle cx="23.6" cy="11.2" r="2.25"
+          fill="#505356" stroke="#d0d4d7" stroke-width="1.20"/>
 </svg>)SVG";
 
   wxFFile file(path, "wb");

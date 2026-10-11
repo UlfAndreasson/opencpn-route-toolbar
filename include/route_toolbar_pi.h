@@ -47,6 +47,9 @@ public:
   void BeginEblVrm();
   void BeginPil();
   void ExportRouteReport();
+  void RouteGpx();
+  void ExportRouteGpxPackage();
+  void ImportRouteGpxPackage();
   void ExportRouteCsvReport();
   void ExportRoutePdfReport();
   void CancelInteractiveTool();

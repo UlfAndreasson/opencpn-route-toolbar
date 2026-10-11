@@ -20,6 +20,7 @@ private:
   void OnEblVrm(wxCommandEvent& event);
   void OnPil(wxCommandEvent& event);
   void OnReport(wxCommandEvent& event);
+  void OnGpx(wxCommandEvent& event);
   void OnLabelSize(wxSpinEvent& event);
   void OnLabelSizeText(wxCommandEvent& event);
   void OnEblColour(wxColourPickerEvent& event);

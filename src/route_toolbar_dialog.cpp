@@ -3,6 +3,7 @@
 #include "route_toolbar_dialog.h"
 
 #include <wx/button.h>
+#include <wx/choicdlg.h>
 #include <wx/clrpicker.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
@@ -17,6 +18,7 @@ enum : int {
   ID_ROUTE_EBL_VRM = wxID_HIGHEST + 410,
   ID_ROUTE_PIL,
   ID_ROUTE_REPORT,
+  ID_ROUTE_GPX,
   ID_LABEL_SIZE,
   ID_EBL_COLOUR,
   ID_PIL_COLOUR
@@ -41,10 +43,12 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
       new wxToggleButton(this, ID_ROUTE_EBL_VRM, _("Route EBL / VRM"));
   m_pil_button = new wxToggleButton(this, ID_ROUTE_PIL, _("Route PIL"));
   auto* report = new wxButton(this, ID_ROUTE_REPORT, _("Route Report"));
+  auto* gpx = new wxButton(this, ID_ROUTE_GPX, _("Route GPX..."));
 
   top->Add(m_ebl_button, 0, wxEXPAND | wxALL, 10);
   top->Add(m_pil_button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
   top->Add(report, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+  top->Add(gpx, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
   auto* label_row = new wxBoxSizer(wxHORIZONTAL);
   label_row->Add(new wxStaticText(this, wxID_ANY, _("EBL label size:")),
@@ -90,6 +94,7 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
        ID_ROUTE_EBL_VRM);
   Bind(wxEVT_TOGGLEBUTTON, &RouteToolbarDialog::OnPil, this, ID_ROUTE_PIL);
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnReport, this, ID_ROUTE_REPORT);
+  Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnGpx, this, ID_ROUTE_GPX);
   Bind(wxEVT_SPINCTRL, &RouteToolbarDialog::OnLabelSize, this, ID_LABEL_SIZE);
   Bind(wxEVT_TEXT, &RouteToolbarDialog::OnLabelSizeText, this, ID_LABEL_SIZE);
   Bind(wxEVT_COLOURPICKER_CHANGED, &RouteToolbarDialog::OnEblColour, this,
@@ -140,6 +145,13 @@ void RouteToolbarDialog::OnReport(wxCommandEvent&) {
   SetToolButtons(false, false);
   m_plugin->CancelInteractiveTool();
   m_plugin->ExportRouteReport();
+}
+
+void RouteToolbarDialog::OnGpx(wxCommandEvent&) {
+  if (!m_plugin) return;
+  SetToolButtons(false, false);
+  m_plugin->CancelInteractiveTool();
+  m_plugin->RouteGpx();
 }
 
 void RouteToolbarDialog::OnLabelSize(wxSpinEvent& event) {

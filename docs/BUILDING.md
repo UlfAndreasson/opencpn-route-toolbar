@@ -1,104 +1,188 @@
 # Building Route Toolbar on macOS
 
-The current development target is **OpenCPN 5.14.2** using plugin API **1.21**.
+Current development target:
+
+- OpenCPN 5.14.2-universal
+- Plugin API 1.21
+- wxWidgets 3.2
+- Apple Silicon arm64
+- Route Toolbar 0.4.0
 
 ## Prerequisites
 
-- Xcode command-line tools
-- CMake
-- **wxWidgets 3.2** built for the same CPU architecture as OpenCPN
-
-Do not build this plugin against Homebrew's default `wxwidgets` formula when it resolves to wxWidgets 3.3. A plugin built against wxWidgets 3.3 can load into OpenCPN but crash when a wx window is created if OpenCPN is running wxWidgets 3.2.
-
-With Homebrew:
+Install:
 
 ```bash
 brew install cmake wxwidgets@3.2
 ```
 
+Xcode Command Line Tools are also required.
+
+Do not build Route Toolbar against wxWidgets 3.3 for OpenCPN 5.14.2.
+
+OpenCPN 5.14.2 uses wxWidgets 3.2. Loading another incompatible wx runtime into
+the same process can cause crashes when plugin windows are created.
+
 ## Clone
 
 ```bash
-git clone --recurse-submodules https://github.com/UlfAndreasson/opencpn-route-toolbar.git
+git clone --recurse-submodules \
+  https://github.com/UlfAndreasson/opencpn-route-toolbar.git
+
 cd opencpn-route-toolbar
 ```
 
-If already cloned:
+Existing checkout:
 
 ```bash
-git pull
 git submodule update --init --recursive
 ```
 
-## Configure and build
+## Configure
 
-On Apple Silicon:
+Apple Silicon:
 
 ```bash
 rm -rf build
+
 WX32="$(brew --prefix wxwidgets@3.2)/bin/wx-config-3.2"
-"$WX32" --version
+
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_ARCHITECTURES=arm64 \
   -DwxWidgets_CONFIG_EXECUTABLE="$WX32"
-cmake --build build --config Release -j 4
 ```
 
-Expected macOS output:
+Route Toolbar uses wxWidgets:
+
+- core
+- base
+- xml
+
+The XML component is required for GPX package handling.
+
+## Build
+
+```bash
+cmake --build build -j 4
+```
+
+Successful result:
 
 ```text
-build/libroute_toolbar_pi.dylib
+[100%] Built target route_toolbar_pi
 ```
 
-The CMake build rewrites wxWidgets dependencies in the finished plugin to OpenCPN's bundled runtime:
+macOS currently produces OpenGL deprecation warnings for legacy calls such as
+`glBegin`, `glEnd` and `glVertex*`.
 
-```text
-@executable_path/../Frameworks/libwx_...-3.2.dylib
-```
+These warnings are expected and are not build failures.
 
-Verify with:
+## wxWidgets dependency rewrite
+
+The post-build step rewrites Homebrew wxWidgets dependencies to the runtime
+inside OpenCPN.app and then ad-hoc signs the plugin.
+
+Verify:
 
 ```bash
 otool -L build/libroute_toolbar_pi.dylib | grep wx
 ```
 
-No `/opt/homebrew/.../libwx...` path should remain in the final plugin.
+Expected:
 
-## Install development build
-
-Quit OpenCPN first, then:
-
-```bash
-PLUGIN_DIR="$HOME/Library/Application Support/OpenCPN/Contents/PlugIns"
-mkdir -p "$PLUGIN_DIR"
-cp build/libroute_toolbar_pi.dylib "$PLUGIN_DIR/"
-codesign --force --sign - "$PLUGIN_DIR/libroute_toolbar_pi.dylib"
+```text
+@executable_path/../Frameworks/libwx_osx_cocoau_core-3.2.dylib
+@executable_path/../Frameworks/libwx_baseu-3.2.dylib
+@executable_path/../Frameworks/libwx_baseu_xml-3.2.dylib
 ```
 
-Then start OpenCPN and enable **Route Toolbar** in Options -> Plugins.
+No Homebrew `/opt/homebrew/...libwx...` path should remain.
 
-The first milestone is successful when OpenCPN loads the plugin and a **Route Toolbar** button opens a small window containing:
+## Development install
 
-- Route EBL / VRM
-- Route PIL
-- Route Report
+```bash
+killall OpenCPN 2>/dev/null
+sleep 2
 
-These buttons are UI scaffolding only in v0.1.0; chart interaction is implemented in the next milestones.
+cp build/libroute_toolbar_pi.dylib \
+  "$HOME/Library/Application Support/OpenCPN/Contents/PlugIns/"
 
-## Architecture note
+rm -f \
+  "$HOME/Library/Preferences/opencpn/load_stamps/libroute_toolbar_pi"
 
-The plugin, OpenCPN and wxWidgets must use compatible architectures. OpenCPN 5.14.2-universal can host the native Apple Silicon build when running as `arm64`.
+open -n /Applications/OpenCPN.app
+```
 
-## OpenCPN API dependency
+## Important paths
 
-`opencpn-libs` is included as a git submodule and the build currently uses `opencpn-libs/api-21`.
+Plugin:
 
-## Development order
+```text
+~/Library/Application Support/OpenCPN/Contents/PlugIns/
+```
 
-1. Verify plugin load + Route Toolbar UI on OpenCPN 5.14.2/macOS.
-2. Add cursor/mouse capture and route/leg identification.
-3. Implement Route EBL/VRM with a 90-degree range arc.
-4. Implement Route PIL directly from a selected route leg.
-5. Add persistence/manager integration.
-6. Add Route Report CSV and printable HTML export.
+Configuration:
+
+```text
+~/Library/Preferences/opencpn/opencpn.ini
+```
+
+Log:
+
+```text
+~/Library/Logs/opencpn.log
+```
+
+## Persistence warning
+
+Do not delete `opencpn.ini` as a normal troubleshooting step.
+
+It contains persistent Route Toolbar planning data.
+
+## Startup
+
+Route Toolbar intentionally delays loading persisted EBL/VRM and PIL state for
+a few seconds after initialization.
+
+This prevents navigation GUID lookups from happening before OpenCPN has loaded
+routes and Marks.
+
+## Load stamp recovery
+
+If OpenCPN refuses to reload Route Toolbar after a failed plugin startup:
+
+```bash
+rm -f \
+  "$HOME/Library/Preferences/opencpn/load_stamps/libroute_toolbar_pi"
+```
+
+Remove only the Route Toolbar load stamp.
+
+## Source layout
+
+```text
+src/route_toolbar_pi.cpp
+    Core plugin, EBL/VRM rendering and persistence
+
+src/route_pil.cpp
+    PIL geometry and interaction
+
+src/route_context.cpp
+    Chart context-menu editing
+
+src/route_report.cpp
+    CSV report
+
+src/route_report_pdf.cpp
+    PDF report
+
+src/route_gpx.cpp
+    GPX package import/export
+
+src/route_toolbar_dialog.cpp
+    Route Toolbar window
+
+include/route_toolbar_pi.h
+include/route_toolbar_dialog.h
+```
