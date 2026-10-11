@@ -36,9 +36,9 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 2;
-constexpr int kPluginVersionPatch = 1;
+constexpr int kPluginVersionPatch = 2;
 constexpr double kWaypointPickRadiusNm = 0.10;
-constexpr double kDefaultArcWidthDeg = 90.0;
+constexpr double kDefaultArcWidthDeg = 30.0;
 constexpr int kArcSegments = 30;
 
 static const char* route_toolbar_xpm[] = {
@@ -262,8 +262,11 @@ void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
   item.waypoint_guid = m_pending_start.waypoint_guid;
   item.waypoint_name = m_pending_start.waypoint_name;
 
+  // OpenCPN's legacy DistanceBearingMercator API names its first coordinate
+  // pair lat1/lon1 and its second pair lat0/lon0. To obtain the bearing from
+  // the route point to the sight mark, pass target first and route point last.
   DistanceBearingMercator_Plugin(
-      item.start_lat, item.start_lon, item.target_lat, item.target_lon,
+      item.target_lat, item.target_lon, item.start_lat, item.start_lon,
       &item.bearing_true, &item.range_nm);
   item.bearing_true = NormalizeBearing(item.bearing_true);
 
@@ -276,6 +279,12 @@ void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
       _("Sight mark %lu"), static_cast<unsigned long>(m_ebl_vrms.size() + 1));
   item.target_name = default_name;
 
+  // Freeze the selected geometry before opening the modal naming dialog. This
+  // prevents the live preview from following the mouse to the dialog buttons.
+  m_ebl_mode = EblMode::Idle;
+  m_ebl_vrms.push_back(item);
+  if (m_parent_window) RequestRefresh(m_parent_window);
+
   wxTextEntryDialog name_dialog(
       m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
       _("Name this sight mark / target. Examples: Rivö fyr, No 28, Gulldisken."),
@@ -283,15 +292,16 @@ void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
   if (name_dialog.ShowModal() == wxID_OK) {
     wxString entered = name_dialog.GetValue();
     entered.Trim(true).Trim(false);
-    if (!entered.IsEmpty()) item.target_name = entered;
+    if (!entered.IsEmpty()) {
+      item.target_name = entered;
+      m_ebl_vrms.back().target_name = entered;
+    }
   }
-
-  m_ebl_vrms.push_back(item);
 
   wxString waypoint_name = item.waypoint_name;
   if (waypoint_name.IsEmpty()) waypoint_name = _("Waypoint");
   SetStatus(waypoint_name + _(" → ") + item.target_name + _("  ") +
-            wxString::Format(_("%03.0f°T  %.2f NM. Created with a 90° VRM arc. Click another route waypoint, or right-click to finish."),
+            wxString::Format(_("%03.0f°T  %.2f NM. Created with a 30° VRM arc. Click another route waypoint, or right-click to finish."),
                              item.bearing_true, item.range_nm));
 
   m_pending_start = RouteWaypointHit{};
@@ -319,8 +329,8 @@ bool route_toolbar_pi::RenderOverlay(wxDC& dc, PlugIn_ViewPort* vp) {
     preview.waypoint_name = m_pending_start.waypoint_name;
 
     DistanceBearingMercator_Plugin(
-        preview.start_lat, preview.start_lon, preview.target_lat,
-        preview.target_lon, &preview.bearing_true, &preview.range_nm);
+        preview.target_lat, preview.target_lon, preview.start_lat,
+        preview.start_lon, &preview.bearing_true, &preview.range_nm);
     preview.bearing_true = NormalizeBearing(preview.bearing_true);
 
     if (preview.range_nm >= 0.001) {
@@ -373,8 +383,8 @@ bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
     preview.waypoint_name = m_pending_start.waypoint_name;
 
     DistanceBearingMercator_Plugin(
-        preview.start_lat, preview.start_lon, preview.target_lat,
-        preview.target_lon, &preview.bearing_true, &preview.range_nm);
+        preview.target_lat, preview.target_lon, preview.start_lat,
+        preview.start_lon, &preview.bearing_true, &preview.range_nm);
     preview.bearing_true = NormalizeBearing(preview.bearing_true);
 
     if (preview.range_nm >= 0.001) {
