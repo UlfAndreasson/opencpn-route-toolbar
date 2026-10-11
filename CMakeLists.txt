@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(route_toolbar_pi VERSION 0.2.6 LANGUAGES CXX)
+project(route_toolbar_pi VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,6 +34,7 @@ add_subdirectory(opencpn-libs/api-21 EXCLUDE_FROM_ALL)
 add_library(route_toolbar_pi SHARED
   src/route_toolbar_pi.cpp
   src/route_toolbar_dialog.cpp
+  src/route_report.cpp
 )
 
 target_include_directories(route_toolbar_pi PRIVATE include)
