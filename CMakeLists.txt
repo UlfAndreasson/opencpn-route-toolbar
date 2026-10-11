@@ -35,6 +35,7 @@ add_library(route_toolbar_pi SHARED
   src/route_toolbar_pi.cpp
   src/route_toolbar_dialog.cpp
   src/route_report.cpp
+  src/route_pil.cpp
 )
 
 target_include_directories(route_toolbar_pi PRIVATE include)
