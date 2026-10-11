@@ -25,11 +25,13 @@ constexpr double kBottom = 558.0;
 constexpr double kRowH = 18.0;
 constexpr double kHeadH = 22.0;
 
-const std::vector<double> kWidths = {28, 60, 82, 86, 52, 52,
-                                     94, 52, 52, 116, 120};
+// Exactly 794 pt wide: 842 pt A4 landscape minus 24 pt margins on each side.
+const std::vector<double> kWidths = {26, 58, 80, 84, 46, 46, 46,
+                                     50, 88, 45, 48, 84, 93};
 const std::vector<wxString> kHeaders = {
     "WP", "Waypoint", "Latitude", "Longitude", "Course °T", "Dist NM",
-    "Sight mark", "EBL °T", "Range NM", "Sight lat", "Sight lon"};
+    "PIL side", "PIL NM", "Sight mark", "EBL °T", "Range NM",
+    "Sight lat", "Sight lon"};
 
 struct SightRow {
   wxString name;
@@ -46,6 +48,8 @@ struct WaypointRow {
   wxString name;
   double course{NAN};
   double distance{NAN};
+  wxString pil_side;
+  wxString pil_offset;
   std::vector<SightRow> sights;
 };
 
@@ -88,7 +92,6 @@ wxString Fit(wxString text, double width, double size = 7.0) {
 
 struct Canvas {
   std::ostringstream s;
-  static double Y(double y) { return kPageH - y; }
 
   void Rect(double x, double y, double w, double h, double fill = 1.0) {
     s << std::fixed << std::setprecision(2) << fill << " g " << x << ' '
@@ -272,11 +275,22 @@ void route_toolbar_pi::ExportRoutePdfReport() {
     }
   }
 
-  std::vector<const RoutePil*> pils;
+  size_t pil_count = 0;
   for (const RoutePil& pil : m_pils) {
-    if (pil.route_guid == route_guid ||
-        (pil.route_guid.IsEmpty() && pil.route_name == route_name))
-      pils.push_back(&pil);
+    const bool same_route = pil.route_guid == route_guid ||
+        (pil.route_guid.IsEmpty() && pil.route_name == route_name);
+    if (!same_route || pil.leg_index <= 0 ||
+        static_cast<size_t>(pil.leg_index) > rows.size())
+      continue;
+
+    WaypointRow& row = rows[static_cast<size_t>(pil.leg_index - 1)];
+    if (!row.pil_side.IsEmpty()) {
+      row.pil_side += " / ";
+      row.pil_offset += " / ";
+    }
+    row.pil_side += pil.offset_nm >= 0.0 ? "Stbd" : "Port";
+    row.pil_offset += wxString::Format("%.2f", std::fabs(pil.offset_nm));
+    ++pil_count;
   }
 
   PdfDoc pdf;
@@ -304,8 +318,9 @@ void route_toolbar_pi::ExportRoutePdfReport() {
         wxString::Format("%lu", static_cast<unsigned long>(i + 1)), wp.name,
         Coord(wp.lat, true), Coord(wp.lon, false),
         std::isfinite(wp.course) ? wxString::Format("%03.0f", wp.course) : wxString(),
-        std::isfinite(wp.distance) ? wxString::Format("%.2f", wp.distance) : wxString()};
-    for (size_t c = 0; c < 6; ++c) {
+        std::isfinite(wp.distance) ? wxString::Format("%.2f", wp.distance) : wxString(),
+        wp.pil_side, wp.pil_offset};
+    for (size_t c = 0; c < 8; ++c) {
       page.Rect(x, y, kWidths[c], h, fill);
       page.Text(x + 3, y + 6, Fit(base[c], kWidths[c]), 7.0, c == 0);
       x += kWidths[c];
@@ -315,7 +330,7 @@ void route_toolbar_pi::ExportRoutePdfReport() {
     for (size_t r = 0; r < n; ++r) {
       double sx = sx0;
       const double ry = y + r * kRowH;
-      for (size_t c = 6; c < kWidths.size(); ++c) {
+      for (size_t c = 8; c < kWidths.size(); ++c) {
         page.Rect(sx, ry, kWidths[c], kRowH, fill);
         sx += kWidths[c];
       }
@@ -327,62 +342,12 @@ void route_toolbar_pi::ExportRoutePdfReport() {
             Coord(s.lon, false)};
         sx = sx0;
         for (size_t c = 0; c < vals.size(); ++c) {
-          page.Text(sx + 3, ry + 6, Fit(vals[c], kWidths[c + 6]), 7.0);
-          sx += kWidths[c + 6];
+          page.Text(sx + 3, ry + 6, Fit(vals[c], kWidths[c + 8]), 7.0);
+          sx += kWidths[c + 8];
         }
       }
     }
     y += h;
-  }
-
-  if (!pils.empty()) {
-    const std::vector<double> pw = {36, 70, 70, 58, 66, 52, 62, 115, 115};
-    const std::vector<wxString> ph = {"Leg", "From WP", "To WP", "Course °T",
-                                      "Leg NM", "Side", "Offset NM", "Ref lat",
-                                      "Ref lon"};
-    const auto draw_pil_header = [&]() {
-      double x = kMargin;
-      for (size_t c = 0; c < pw.size(); ++c) {
-        page.Rect(x, y, pw[c], kHeadH, 0.90);
-        page.Text(x + 3, y + 6, Fit(ph[c], pw[c]), 7.0, true);
-        x += pw[c];
-      }
-      y += kHeadH;
-    };
-
-    if (y + 50.0 > kBottom) {
-      finish_page();
-      page.Text(kMargin, 22, "Parallel Index Lines - " + route_name, 13.0, true);
-      y = 50.0;
-    } else {
-      y += 22.0;
-      page.Text(kMargin, y, "Parallel Index Lines", 11.0, true);
-      y += 18.0;
-    }
-    draw_pil_header();
-
-    for (const RoutePil* pil : pils) {
-      if (y + kRowH > kBottom) {
-        finish_page();
-        page.Text(kMargin, 22, "Parallel Index Lines - " + route_name, 13.0, true);
-        y = 50.0;
-        draw_pil_header();
-      }
-      const std::vector<wxString> vals = {
-          wxString::Format("%d", pil->leg_index), pil->from_name, pil->to_name,
-          wxString::Format("%03.0f", pil->course_true),
-          wxString::Format("%.2f", pil->leg_distance_nm),
-          pil->offset_nm >= 0.0 ? wxString("Stbd") : wxString("Port"),
-          wxString::Format("%.2f", std::fabs(pil->offset_nm)),
-          Coord(pil->anchor_lat, true), Coord(pil->anchor_lon, false)};
-      double x = kMargin;
-      for (size_t c = 0; c < pw.size(); ++c) {
-        page.Rect(x, y, pw[c], kRowH, 0.985);
-        page.Text(x + 3, y + 6, Fit(vals[c], pw[c]), 7.0);
-        x += pw[c];
-      }
-      y += kRowH;
-    }
   }
 
   if (y + 26.0 > kBottom) {
@@ -395,7 +360,7 @@ void route_toolbar_pi::ExportRoutePdfReport() {
             wxString::Format("Summary: %lu waypoints, %lu EBL/VRM sight marks, %lu PIL, %.2f NM total",
                              static_cast<unsigned long>(rows.size()),
                              static_cast<unsigned long>(sight_count),
-                             static_cast<unsigned long>(pils.size()), total),
+                             static_cast<unsigned long>(pil_count), total),
             8.0, true);
   finish_page();
 
