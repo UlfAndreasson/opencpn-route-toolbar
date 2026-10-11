@@ -86,19 +86,40 @@ wxString EnsureToolbarSvg() {
       !wxFileName::Mkdir(dir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
     return wxEmptyString;
 
-  const wxString path = dir + wxFILE_SEP_PATH + "route-toolbar.svg";
-  static const char* svg = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <rect x="2.6" y="2.6" width="26.8" height="26.8" rx="2.0"
-        fill="#505356" stroke="#b9bec2" stroke-width="0.55"/>
-  <path d="M8.4 9.1 L15.8 19.7 L23.6 11.2"
-        fill="none" stroke="#d0d4d7" stroke-width="1.45"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="8.4" cy="9.1" r="2.25"
-          fill="#505356" stroke="#d0d4d7" stroke-width="1.20"/>
-  <circle cx="15.8" cy="19.7" r="2.25"
-          fill="#505356" stroke="#d0d4d7" stroke-width="1.20"/>
-  <circle cx="23.6" cy="11.2" r="2.25"
-          fill="#505356" stroke="#d0d4d7" stroke-width="1.20"/>
+  const wxString path = dir + wxFILE_SEP_PATH + "route-toolbar-v041.svg";
+  static const char* svg = R"SVG(<svg xmlns="http://www.w3.org/2000/svg"
+     width="32" height="32" viewBox="0 0 32 32">
+
+  <!-- dark background -->
+  <rect x="1.8" y="1.8" width="28.4" height="28.4" rx="2.6"
+        fill="#2b2d2f"
+        stroke="#cfd3d6"
+        stroke-width="0.9"/>
+
+  <!-- route line -->
+  <path d="M8.3 9.2 L15.8 20.0 L23.6 11.3"
+        fill="none"
+        stroke="#eef1f3"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- waypoints -->
+  <circle cx="8.3" cy="9.2" r="2.35"
+          fill="none"
+          stroke="#eef1f3"
+          stroke-width="1.35"/>
+
+  <circle cx="15.8" cy="20.0" r="2.35"
+          fill="none"
+          stroke="#eef1f3"
+          stroke-width="1.35"/>
+
+  <circle cx="23.6" cy="11.3" r="2.35"
+          fill="none"
+          stroke="#eef1f3"
+          stroke-width="1.35"/>
+
 </svg>)SVG";
 
   wxFFile file(path, "wb");
