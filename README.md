@@ -53,13 +53,27 @@ Where practical, Route Toolbar should integrate with or provide equivalent funct
 5. **Reportable** — route + pilotage information can be exported as one coherent passage plan.
 6. **Non-destructive** — never modify an OpenCPN route unexpectedly.
 
+## Current status
+
+### v0.1 scaffold
+
+The repository now contains a minimal OpenCPN API 1.18 plugin scaffold with:
+
+- a **Route Toolbar** OpenCPN toolbar button
+- a small non-modal Route Toolbar window
+- placeholder buttons for **Route EBL / VRM**, **Route PIL** and **Route Report**
+- macOS CMake build support
+- OpenCPN `opencpn-libs` API dependency as a git submodule
+- a macOS GitHub Actions build
+
+The next development step is route/leg selection and chart mouse handling, followed by the Route EBL/VRM implementation.
+
+See [docs/BUILDING.md](docs/BUILDING.md) and [docs/SPEC.md](docs/SPEC.md).
+
 ## Upstream references
 
 - OpenCPN: https://github.com/OpenCPN/OpenCPN
 - OCPN Draw: https://github.com/jongough/ocpn_draw_pi
+- OpenCPN plugin API libraries: https://github.com/OpenCPN/opencpn-libs
 
 OCPN Draw is an important implementation reference for EBL, PIL, drawing, persistence and GPX handling. If Route Toolbar incorporates GPL-licensed OCPN Draw code, Route Toolbar will be distributed under a GPL-compatible license and retain the required attribution/license notices.
-
-## Status
-
-Initial design / scaffold.

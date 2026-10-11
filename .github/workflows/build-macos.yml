@@ -1,0 +1,29 @@
+name: macOS build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install cmake wxwidgets
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j 2
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-toolbar-macos
+          path: build/libroute_toolbar_pi.dylib
