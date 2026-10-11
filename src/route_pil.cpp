@@ -127,7 +127,6 @@ bool route_toolbar_pi::BuildPilFromAnchor(const RouteLegHit& leg,
                                           RoutePil& item) const {
   if (!leg.found) return false;
 
-  const double ref_lat = (leg.start_lat + anchor_lat) / 2.0;
   const XY anchor = ToLocalNm(anchor_lat, anchor_lon,
                               leg.start_lat, leg.start_lon);
   const double theta = leg.course_true * kPi / 180.0;
@@ -209,6 +208,65 @@ void route_toolbar_pi::CompletePil(double anchor_lat, double anchor_lon) {
   m_pending_leg = RouteLegHit{};
   m_pil_mode = PilMode::AwaitLeg;
   if (m_parent_window) RequestRefresh(m_parent_window);
+}
+
+void route_toolbar_pi::BeginMovePilAnchor(int index) {
+  if (index < 0 || static_cast<size_t>(index) >= m_pils.size()) return;
+
+  const RoutePil& current = m_pils[static_cast<size_t>(index)];
+  RouteLegHit leg;
+  leg.found = true;
+  leg.start_lat = current.leg_start_lat;
+  leg.start_lon = current.leg_start_lon;
+  leg.end_lat = current.leg_end_lat;
+  leg.end_lon = current.leg_end_lon;
+  leg.course_true = current.course_true;
+  leg.distance_nm = current.leg_distance_nm;
+  leg.leg_index = current.leg_index;
+  leg.route_guid = current.route_guid;
+  leg.route_name = current.route_name;
+  leg.from_guid = current.from_guid;
+  leg.from_name = current.from_name;
+  leg.to_guid = current.to_guid;
+  leg.to_name = current.to_name;
+
+  m_ebl_mode = EblMode::Idle;
+  m_edit_item_index = -1;
+  m_pending_leg = leg;
+  m_edit_pil_index = index;
+  m_pil_mode = PilMode::MoveExistingAnchor;
+
+  SetStatus(_("Move PIL graphically: drag/click to the new parallel offset. Release/click to save; right-click to cancel."));
+  if (m_parent_window) RequestRefresh(m_parent_window);
+}
+
+bool route_toolbar_pi::CommitMovePilAnchor(double anchor_lat,
+                                           double anchor_lon) {
+  if (m_edit_pil_index < 0 ||
+      static_cast<size_t>(m_edit_pil_index) >= m_pils.size() ||
+      !m_pending_leg.found) {
+    m_pil_mode = PilMode::Idle;
+    m_pending_leg = RouteLegHit{};
+    m_edit_pil_index = -1;
+    return true;
+  }
+
+  RoutePil moved;
+  if (!BuildPilFromAnchor(m_pending_leg, anchor_lat, anchor_lon, moved)) {
+    SetStatus(_("PIL offset is too small or invalid. Move farther from the route leg, or right-click to cancel."));
+    return true;
+  }
+
+  m_pils[static_cast<size_t>(m_edit_pil_index)] = moved;
+  SavePersistentState();
+  SetStatus(wxString::Format(_("PIL moved to %+.2f NM (%s)."),
+                             moved.offset_nm, PilSide(moved.offset_nm)));
+
+  m_pil_mode = PilMode::Idle;
+  m_pending_leg = RouteLegHit{};
+  m_edit_pil_index = -1;
+  if (m_parent_window) RequestRefresh(m_parent_window);
+  return true;
 }
 
 void route_toolbar_pi::DrawPil(wxDC& dc, PlugIn_ViewPort* vp,
