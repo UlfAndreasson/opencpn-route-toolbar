@@ -9,6 +9,7 @@ class route_toolbar_pi;
 class RouteToolbarDialog final : public wxDialog {
 public:
   RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugin);
+  void SetStatus(const wxString& text);
 
 private:
   void OnEblVrm(wxCommandEvent& event);
