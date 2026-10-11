@@ -8,12 +8,8 @@
 #include <limits>
 
 #include <wx/choicdlg.h>
-#include <wx/ffile.h>
-#include <wx/filefn.h>
-#include <wx/filename.h>
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
-#include <wx/stdpaths.h>
 #include <wx/textdlg.h>
 
 namespace {
@@ -38,36 +34,9 @@ double DistancePointToSegmentNm(const XY& p, const XY& a, const XY& b) {
                               0.0, 1.0);
   return std::hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
-
-wxString WriteInvertedToolbarSvg() {
-  const wxString base = wxStandardPaths::Get().GetUserDataDir();
-  const wxString dir = base + wxFILE_SEP_PATH + "route_toolbar_pi";
-  if (!wxFileName::DirExists(dir) &&
-      !wxFileName::Mkdir(dir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
-    return wxEmptyString;
-
-  const wxString path = dir + wxFILE_SEP_PATH + "route-toolbar-inverted.svg";
-  static const char* svg = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <rect x="2.5" y="2.5" width="27" height="27" rx="4.5" fill="#4f5255" stroke="#c9cccf" stroke-width="0.9"/>
-  <path d="M6.5 8.5 L15.5 19 L25.5 10.5" fill="none" stroke="#d6d9dc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="6.5" cy="8.5" r="2.8" fill="#4f5255" stroke="#d6d9dc" stroke-width="1.6"/>
-  <circle cx="15.5" cy="19" r="2.8" fill="#4f5255" stroke="#d6d9dc" stroke-width="1.6"/>
-  <circle cx="25.5" cy="10.5" r="2.8" fill="#4f5255" stroke="#d6d9dc" stroke-width="1.6"/>
-</svg>)SVG";
-
-  wxFFile file(path, "wb");
-  if (!file.IsOpened()) return wxEmptyString;
-  file.Write(svg, wxConvUTF8);
-  file.Close();
-  return path;
-}
 }  // namespace
 
 void route_toolbar_pi::EnsureContextMenu() {
-  const wxString icon_path = WriteInvertedToolbarSvg();
-  if (!icon_path.IsEmpty() && m_toolbar_id >= 0)
-    SetToolbarToolBitmapsSVG(m_toolbar_id, icon_path, icon_path, icon_path);
-
   if (m_context_ebl_id >= 0 || m_context_pil_id >= 0) return;
 
   m_context_menu_owner = new wxMenu(_("Route Toolbar"));
@@ -106,7 +75,7 @@ int route_toolbar_pi::FindNearestPil(double lat, double lon,
 }
 
 void route_toolbar_pi::UpdateContextMenuHit() {
-  // Menu entries intentionally stay visible; proximity is checked on command.
+  // Menu entries stay visible; proximity is checked when a command is chosen.
 }
 
 void route_toolbar_pi::OnContextMenuItemCallback(int id) {
