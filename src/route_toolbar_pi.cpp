@@ -36,10 +36,33 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 2;
-constexpr int kPluginVersionPatch = 2;
+constexpr int kPluginVersionPatch = 3;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kDefaultArcWidthDeg = 30.0;
 constexpr int kArcSegments = 30;
+constexpr int kTargetRingRadiusPx = 7;
+constexpr int kTargetCrosshairRadiusPx = 11;
+constexpr int kLabelOffsetXPx = 18;
+constexpr int kLabelOffsetYPx = 18;
+constexpr int kEblDefaultFontSize = 13;
+constexpr const char* kEblFontKey = "Route Toolbar EBL/VRM";
+
+wxFont GetEblLabelFont() {
+  wxFont* configured = GetOCPNScaledFont_PlugIn(
+      wxString::FromUTF8(kEblFontKey), kEblDefaultFontSize);
+  if (configured && configured->IsOk()) return *configured;
+
+  wxFont fallback = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+  if (fallback.GetPointSize() < kEblDefaultFontSize)
+    fallback.SetPointSize(kEblDefaultFontSize);
+  return fallback;
+}
+
+wxColour GetEblLabelColour() {
+  wxColour colour = GetFontColour_PlugIn(wxString::FromUTF8(kEblFontKey));
+  if (!colour.IsOk()) colour = *wxBLACK;
+  return colour;
+}
 
 static const char* route_toolbar_xpm[] = {
     "16 16 3 1",
@@ -77,6 +100,10 @@ route_toolbar_pi::~route_toolbar_pi() = default;
 
 int route_toolbar_pi::Init() {
   m_parent_window = GetOCPNCanvasWindow();
+
+  // Register a dedicated OpenCPN font key. This makes the EBL/VRM labels
+  // independently configurable in Options -> User Interface -> Fonts.
+  AddPersistentFontKey(wxString::FromUTF8(kEblFontKey));
 
   m_toolbar_id = InsertPlugInTool(
       _("Route Toolbar"), &m_toolbar_bitmap, &m_toolbar_bitmap, wxITEM_CHECK,
@@ -414,6 +441,7 @@ void route_toolbar_pi::DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp,
   const wxPen old_pen = dc.GetPen();
   const wxBrush old_brush = dc.GetBrush();
   const wxColour old_text = dc.GetTextForeground();
+  const wxFont old_font = dc.GetFont();
   const wxColour line_colour = preview ? wxColour(150, 0, 170)
                                        : wxColour(210, 0, 220);
 
@@ -441,27 +469,56 @@ void route_toolbar_pi::DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp,
     have_previous = true;
   }
 
+  // Keep the route-point marker subtle, but make the selected sight mark
+  // unmistakable. The VRM arc is centred on this geographical target point.
   dc.SetBrush(wxBrush(line_colour));
   dc.DrawCircle(start_px, preview ? 2 : 3);
-  dc.DrawCircle(target_px, preview ? 3 : 4);
+  dc.SetBrush(*wxTRANSPARENT_BRUSH);
+  dc.DrawCircle(target_px, preview ? 5 : kTargetRingRadiusPx);
+  const int cross = preview ? 8 : kTargetCrosshairRadiusPx;
+  dc.DrawLine(target_px.x - cross, target_px.y, target_px.x + cross,
+              target_px.y);
+  dc.DrawLine(target_px.x, target_px.y - cross, target_px.x,
+              target_px.y + cross);
 
-  wxString label;
-  if (!preview && !item.target_name.IsEmpty()) label = item.target_name + _("  ");
-  label += wxString::Format(_("%03.0f°T  %.2f NM"), item.bearing_true,
-                            item.range_nm);
+  const wxString bearing_range = wxString::Format(
+      _("%03.0f°T · %.2f NM"), item.bearing_true, item.range_nm);
+  wxString first_line;
+  if (!preview && !item.target_name.IsEmpty()) first_line = item.target_name;
 
-  const wxSize text_size = dc.GetTextExtent(label);
-  const wxPoint text_pos(target_px.x + 8, target_px.y - text_size.y - 8);
+  const wxFont font = GetEblLabelFont();
+  dc.SetFont(font);
+  const wxSize first_size = first_line.IsEmpty() ? wxSize(0, 0)
+                                                  : dc.GetTextExtent(first_line);
+  const wxSize second_size = dc.GetTextExtent(bearing_range);
+  const int line_gap = first_line.IsEmpty() ? 0 : 2;
+  const int text_width = std::max(first_size.x, second_size.x);
+  const int text_height = first_size.y + line_gap + second_size.y;
+  const wxPoint text_pos(target_px.x + kLabelOffsetXPx,
+                         target_px.y - text_height - kLabelOffsetYPx);
+
+  // A short leader ties the label back to the exact selected chart feature.
+  dc.SetPen(wxPen(line_colour, 1, wxPENSTYLE_SOLID));
+  dc.DrawLine(target_px.x + kTargetRingRadiusPx,
+              target_px.y - kTargetRingRadiusPx,
+              text_pos.x - 4, text_pos.y + text_height / 2);
+
   dc.SetPen(*wxTRANSPARENT_PEN);
   dc.SetBrush(wxBrush(wxColour(255, 245, 150)));
-  dc.DrawRectangle(text_pos.x - 3, text_pos.y - 2, text_size.x + 6,
-                   text_size.y + 4);
-  dc.SetTextForeground(*wxBLACK);
-  dc.DrawText(label, text_pos);
+  dc.DrawRectangle(text_pos.x - 4, text_pos.y - 3, text_width + 8,
+                   text_height + 6);
+  dc.SetTextForeground(GetEblLabelColour());
+  int text_y = text_pos.y;
+  if (!first_line.IsEmpty()) {
+    dc.DrawText(first_line, text_pos.x, text_y);
+    text_y += first_size.y + line_gap;
+  }
+  dc.DrawText(bearing_range, text_pos.x, text_y);
 
   dc.SetPen(old_pen);
   dc.SetBrush(old_brush);
   dc.SetTextForeground(old_text);
+  dc.SetFont(old_font);
 }
 
 void route_toolbar_pi::DrawEblVrmGL(PlugIn_ViewPort* vp,
@@ -502,38 +559,85 @@ void route_toolbar_pi::DrawEblVrmGL(PlugIn_ViewPort* vp,
   }
   glEnd();
 
-  glPointSize(preview ? 6.0f : 8.0f);
+  // Route point.
+  glPointSize(preview ? 5.0f : 7.0f);
   glBegin(GL_POINTS);
   glVertex2i(start_px.x, start_px.y);
-  glVertex2i(target_px.x, target_px.y);
   glEnd();
 
-  wxString label;
-  if (!preview && !item.target_name.IsEmpty()) label = item.target_name + _("  ");
-  label += wxString::Format(_("%03.0f°T  %.2f NM"), item.bearing_true,
-                            item.range_nm);
-  DrawGlLabel(label, target_px.x + 8, target_px.y - 28);
+  // Target anchor: ring + crosshair centred exactly on the clicked sight mark.
+  const int ring = preview ? 5 : kTargetRingRadiusPx;
+  glBegin(GL_LINE_LOOP);
+  for (int i = 0; i < 24; ++i) {
+    const double angle = (2.0 * M_PI * i) / 24.0;
+    glVertex2d(target_px.x + std::cos(angle) * ring,
+               target_px.y + std::sin(angle) * ring);
+  }
+  glEnd();
+  const int cross = preview ? 8 : kTargetCrosshairRadiusPx;
+  glBegin(GL_LINES);
+  glVertex2i(target_px.x - cross, target_px.y);
+  glVertex2i(target_px.x + cross, target_px.y);
+  glVertex2i(target_px.x, target_px.y - cross);
+  glVertex2i(target_px.x, target_px.y + cross);
+  glEnd();
+
+  const wxString bearing_range = wxString::Format(
+      _("%03.0f°T · %.2f NM"), item.bearing_true, item.range_nm);
+  wxString label = bearing_range;
+  if (!preview && !item.target_name.IsEmpty())
+    label = item.target_name + _("\n") + bearing_range;
+
+  const wxFont font = GetEblLabelFont();
+  const int approximate_height = std::max(18, font.GetPixelSize().y);
+  const int label_x = target_px.x + kLabelOffsetXPx;
+  const int label_y = target_px.y -
+                      (preview ? approximate_height + kLabelOffsetYPx
+                               : 2 * approximate_height + kLabelOffsetYPx);
+
+  // Leader line to make the label-target relationship explicit.
+  glBegin(GL_LINES);
+  glVertex2i(target_px.x + ring, target_px.y - ring);
+  glVertex2i(label_x - 4, label_y + approximate_height);
+  glEnd();
+
+  DrawGlLabel(label, label_x, label_y);
 }
 
 void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
   if (label.IsEmpty()) return;
 
-  const wxFont font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+  const wxFont font = GetEblLabelFont();
+  const wxColour text_colour = GetEblLabelColour();
+  const int newline = label.Find('\n');
+  const wxString first_line =
+      newline == wxNOT_FOUND ? label : label.Left(static_cast<size_t>(newline));
+  const wxString second_line =
+      newline == wxNOT_FOUND ? wxString() : label.Mid(static_cast<size_t>(newline + 1));
+
   wxBitmap measure_bitmap(1, 1, 24);
   wxMemoryDC measure_dc(measure_bitmap);
   measure_dc.SetFont(font);
-  const wxSize extent = measure_dc.GetTextExtent(label);
+  const wxSize first_extent = measure_dc.GetTextExtent(first_line);
+  const wxSize second_extent = second_line.IsEmpty()
+                                   ? wxSize(0, 0)
+                                   : measure_dc.GetTextExtent(second_line);
   measure_dc.SelectObject(wxNullBitmap);
 
-  const int width = std::max(1, extent.x + 8);
-  const int height = std::max(1, extent.y + 6);
+  const int line_gap = second_line.IsEmpty() ? 0 : 2;
+  const int text_width = std::max(first_extent.x, second_extent.x);
+  const int text_height = first_extent.y + line_gap + second_extent.y;
+  const int width = std::max(1, text_width + 8);
+  const int height = std::max(1, text_height + 6);
   wxBitmap bitmap(width, height, 24);
   wxMemoryDC bitmap_dc(bitmap);
   bitmap_dc.SetBackground(wxBrush(wxColour(255, 245, 150)));
   bitmap_dc.Clear();
   bitmap_dc.SetFont(font);
-  bitmap_dc.SetTextForeground(*wxBLACK);
-  bitmap_dc.DrawText(label, 4, 3);
+  bitmap_dc.SetTextForeground(text_colour);
+  bitmap_dc.DrawText(first_line, 4, 3);
+  if (!second_line.IsEmpty())
+    bitmap_dc.DrawText(second_line, 4, 3 + first_extent.y + line_gap);
   bitmap_dc.SelectObject(wxNullBitmap);
 
   wxImage image = bitmap.ConvertToImage();
