@@ -55,18 +55,29 @@ Where practical, Route Toolbar should integrate with or provide equivalent funct
 
 ## Current status
 
-### v0.1 scaffold
+### v0.2 Route EBL/VRM prototype
 
-The repository now contains a minimal OpenCPN API 1.18 plugin scaffold with:
+The plugin now targets OpenCPN 5.14.2 / API 1.21 and includes a first working Route EBL/VRM workflow:
 
-- a **Route Toolbar** OpenCPN toolbar button
-- a small non-modal Route Toolbar window
-- placeholder buttons for **Route EBL / VRM**, **Route PIL** and **Route Report**
-- macOS CMake build support
-- OpenCPN `opencpn-libs` API dependency as a git submodule
-- a macOS GitHub Actions build
+- **Route Toolbar** opens as a non-modal OpenCPN tool window.
+- Select **Route EBL / VRM**.
+- Click near a route waypoint; the click snaps to the nearest waypoint within 0.10 NM.
+- Click the lighthouse, buoy, beacon or other sight mark.
+- Enter a target/sight-mark name.
+- The chart shows:
+  - EBL line from the route waypoint to the target
+  - true bearing
+  - range in NM
+  - a 90° VRM arc centred on the EBL bearing instead of a full circle
+- While choosing the target, the EBL and VRM arc are previewed live.
+- Repeated EBL/VRM objects can be created in one session; right-click exits creation mode.
 
-The next development step is route/leg selection and chart mouse handling, followed by the Route EBL/VRM implementation.
+Current limitations of this prototype:
+
+- first point snaps to route **waypoints** only; arbitrary points on a route leg come next
+- EBL/VRM objects are currently in-memory only and do not yet survive restart
+- manager integration / edit / show-hide / delete / export is not implemented yet
+- Route PIL and Route Report are still placeholders
 
 See [docs/BUILDING.md](docs/BUILDING.md) and [docs/SPEC.md](docs/SPEC.md).
 
