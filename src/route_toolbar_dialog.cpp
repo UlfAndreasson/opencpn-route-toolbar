@@ -53,7 +53,7 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
 
   m_status = new wxStaticText(
       this, wxID_ANY,
-      _("Route EBL/VRM and Route Report are ready."));
+      _("Route EBL/VRM, Route PIL and Route Report are ready."));
   m_status->Wrap(360);
   top->Add(new wxStaticLine(this), 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
   top->Add(m_status, 0, wxEXPAND | wxALL, 10);
@@ -83,8 +83,7 @@ void RouteToolbarDialog::OnEblVrm(wxCommandEvent&) {
 }
 
 void RouteToolbarDialog::OnPil(wxCommandEvent&) {
-  if (m_plugin) m_plugin->CancelInteractiveTool();
-  SetStatus(_("Route PIL selected — route-leg selection is the next implementation step."));
+  if (m_plugin) m_plugin->BeginPil();
 }
 
 void RouteToolbarDialog::OnReport(wxCommandEvent&) {
