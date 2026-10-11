@@ -45,6 +45,7 @@ public:
   void BeginEblVrm();
   void BeginPil();
   void ExportRouteReport();
+  void ExportRouteCsvReport();
   void ExportRoutePdfReport();
   void CancelInteractiveTool();
   void OnDialogHidden();
@@ -135,8 +136,6 @@ private:
     MoveExistingAnchor,
   };
 
-  enum class ContextObjectKind { None, EblVrm, Pil };
-
   void ShowToolWindow();
   void HideToolWindow();
   void SetStatus(const wxString& text);
@@ -189,11 +188,11 @@ private:
   bool m_dialog_visible{false};
   wxBitmap m_toolbar_bitmap;
 
-  int m_context_edit_id{-1};
+  int m_context_ebl_id{-1};
+  int m_context_pil_id{-1};
   wxMenu* m_context_menu_owner{nullptr};
-  wxMenuItem* m_context_edit_item{nullptr};
-  ContextObjectKind m_context_object_kind{ContextObjectKind::None};
-  int m_context_object_index{-1};
+  wxMenuItem* m_context_ebl_item{nullptr};
+  wxMenuItem* m_context_pil_item{nullptr};
 
   EblMode m_ebl_mode{EblMode::Idle};
   RouteWaypointHit m_pending_start;
