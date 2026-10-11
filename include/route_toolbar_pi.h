@@ -10,6 +10,7 @@
 #include "ocpn_plugin.h"
 
 class RouteToolbarDialog;
+class wxFileConfig;
 
 class route_toolbar_pi final : public opencpn_plugin_121 {
 public:
@@ -39,6 +40,7 @@ public:
   bool RenderGLOverlay(wxGLContext* pcontext, PlugIn_ViewPort* vp) override;
 
   void BeginEblVrm();
+  void BeginPil();
   void ExportRouteReport();
   void CancelInteractiveTool();
   void OnDialogHidden();
@@ -73,11 +75,58 @@ private:
     wxString target_name;
   };
 
+  struct RouteLegHit {
+    bool found{false};
+    double pick_distance_nm{0.0};
+    double start_lat{0.0};
+    double start_lon{0.0};
+    double end_lat{0.0};
+    double end_lon{0.0};
+    double course_true{0.0};
+    double distance_nm{0.0};
+    int leg_index{0};
+    wxString route_guid;
+    wxString route_name;
+    wxString from_guid;
+    wxString from_name;
+    wxString to_guid;
+    wxString to_name;
+  };
+
+  struct RoutePil {
+    double leg_start_lat{0.0};
+    double leg_start_lon{0.0};
+    double leg_end_lat{0.0};
+    double leg_end_lon{0.0};
+    double line_start_lat{0.0};
+    double line_start_lon{0.0};
+    double line_end_lat{0.0};
+    double line_end_lon{0.0};
+    double anchor_lat{0.0};
+    double anchor_lon{0.0};
+    double course_true{0.0};
+    double leg_distance_nm{0.0};
+    double offset_nm{0.0};  // positive = starboard, negative = port
+    int leg_index{0};
+    wxString route_guid;
+    wxString route_name;
+    wxString from_guid;
+    wxString from_name;
+    wxString to_guid;
+    wxString to_name;
+  };
+
   enum class EblMode {
     Idle,
     AwaitRoutePoint,
     AwaitTarget,
     MoveExistingTarget,
+  };
+
+  enum class PilMode {
+    Idle,
+    AwaitLeg,
+    AwaitOffsetPoint,
   };
 
   void ShowToolWindow();
@@ -94,6 +143,18 @@ private:
   void DeleteEblTarget(int index);
   void RecalculateEbl(RouteEblVrm& item) const;
   void CompleteEblVrm(double target_lat, double target_lon);
+
+  RouteLegHit FindNearestRouteLeg(double lat, double lon,
+                                  double max_distance_nm) const;
+  bool BuildPilFromAnchor(const RouteLegHit& leg, double anchor_lat,
+                          double anchor_lon, RoutePil& item) const;
+  void CompletePil(double anchor_lat, double anchor_lon);
+  void DrawPil(wxDC& dc, PlugIn_ViewPort* vp, const RoutePil& item,
+               bool preview) const;
+  void DrawPilGL(PlugIn_ViewPort* vp, const RoutePil& item,
+                 bool preview) const;
+  void LoadPilPersistentState(wxFileConfig* config);
+  void SavePilPersistentState(wxFileConfig* config) const;
 
   void LoadPersistentState();
   void SavePersistentState() const;
@@ -116,6 +177,11 @@ private:
   RouteWaypointHit m_pending_start;
   std::vector<RouteEblVrm> m_ebl_vrms;
   int m_edit_item_index{-1};
+
+  PilMode m_pil_mode{PilMode::Idle};
+  RouteLegHit m_pending_leg;
+  std::vector<RoutePil> m_pils;
+
   int m_label_font_size{14};
   double m_cursor_lat{0.0};
   double m_cursor_lon{0.0};
