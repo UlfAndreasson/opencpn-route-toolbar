@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "route_toolbar_pi.h"
+#include "route_toolbar_dialog.h"
 
 #include <cmath>
 #include <string>
