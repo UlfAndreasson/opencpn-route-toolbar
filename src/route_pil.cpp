@@ -247,8 +247,6 @@ void route_toolbar_pi::BeginMovePilAnchor(int index) {
   m_pending_leg = leg;
   m_edit_pil_index = index;
 
-  // Reuse the normal live PIL preview: the line follows the cursor and the
-  // next click commits the new offset, replacing the existing PIL.
   m_pil_mode = PilMode::AwaitOffsetPoint;
   SetStatus(_("Move PIL graphically: move the cursor to the new offset and click to save. Right-click to cancel."));
   if (m_parent_window) RequestRefresh(m_parent_window);
@@ -285,6 +283,12 @@ bool route_toolbar_pi::CommitMovePilAnchor(double anchor_lat,
 
 void route_toolbar_pi::DrawPil(wxDC& dc, PlugIn_ViewPort* vp,
                                const RoutePil& item, bool preview) const {
+  if (!preview && m_pil_mode == PilMode::AwaitOffsetPoint &&
+      m_edit_pil_index >= 0 &&
+      static_cast<size_t>(m_edit_pil_index) < m_pils.size() &&
+      &item == &m_pils[static_cast<size_t>(m_edit_pil_index)])
+    return;
+
   wxPoint start_px;
   wxPoint end_px;
   wxPoint anchor_px;
@@ -297,8 +301,7 @@ void route_toolbar_pi::DrawPil(wxDC& dc, PlugIn_ViewPort* vp,
   const wxFont old_font = dc.GetFont();
   const wxColour old_text = dc.GetTextForeground();
 
-  const wxColour colour = preview ? wxColour(40, 135, 150)
-                                  : wxColour(0, 105, 125);
+  const wxColour colour = m_pil_colour;
   dc.SetPen(wxPen(colour, preview ? 1 : 2, wxPENSTYLE_LONG_DASH));
   dc.SetBrush(*wxTRANSPARENT_BRUSH);
   dc.DrawLine(start_px, end_px);
@@ -322,6 +325,12 @@ void route_toolbar_pi::DrawPil(wxDC& dc, PlugIn_ViewPort* vp,
 
 void route_toolbar_pi::DrawPilGL(PlugIn_ViewPort* vp, const RoutePil& item,
                                  bool preview) const {
+  if (!preview && m_pil_mode == PilMode::AwaitOffsetPoint &&
+      m_edit_pil_index >= 0 &&
+      static_cast<size_t>(m_edit_pil_index) < m_pils.size() &&
+      &item == &m_pils[static_cast<size_t>(m_edit_pil_index)])
+    return;
+
   wxPoint start_px;
   wxPoint end_px;
   wxPoint anchor_px;
@@ -329,10 +338,8 @@ void route_toolbar_pi::DrawPilGL(PlugIn_ViewPort* vp, const RoutePil& item,
   GetCanvasPixLL(vp, &end_px, item.line_end_lat, item.line_end_lon);
   GetCanvasPixLL(vp, &anchor_px, item.anchor_lat, item.anchor_lon);
 
-  if (preview)
-    glColor4ub(40, 135, 150, 190);
-  else
-    glColor4ub(0, 105, 125, 255);
+  glColor4ub(m_pil_colour.Red(), m_pil_colour.Green(), m_pil_colour.Blue(),
+             preview ? 190 : 255);
 
   glDisable(GL_TEXTURE_2D);
   glLineWidth(preview ? 1.0f : 2.0f);
