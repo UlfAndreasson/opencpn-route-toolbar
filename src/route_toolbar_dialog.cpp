@@ -39,12 +39,13 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
 
   m_status = new wxStaticText(
       this, wxID_ANY,
-      _("v0.1 scaffold loaded. Select a tool to verify the UI."));
+      _("v0.2: Route EBL/VRM is ready. Select the tool, then click a route waypoint."));
+  m_status->Wrap(360);
   top->Add(new wxStaticLine(this), 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
   top->Add(m_status, 0, wxEXPAND | wxALL, 10);
 
   SetSizerAndFit(top);
-  SetMinSize(wxSize(330, GetSize().GetHeight()));
+  SetMinSize(wxSize(390, GetSize().GetHeight()));
 
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnEblVrm, this, ID_ROUTE_EBL_VRM);
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnPil, this, ID_ROUTE_PIL);
@@ -52,25 +53,31 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   Bind(wxEVT_CLOSE_WINDOW, &RouteToolbarDialog::OnClose, this);
 }
 
-void RouteToolbarDialog::OnEblVrm(wxCommandEvent&) {
-  m_status->SetLabel(
-      _("Route EBL/VRM selected — click workflow is the next implementation step."));
+void RouteToolbarDialog::SetStatus(const wxString& text) {
+  if (!m_status) return;
+  m_status->SetLabel(text);
+  m_status->Wrap(360);
+  GetSizer()->Fit(this);
+  SetMinSize(wxSize(390, GetSize().GetHeight()));
   Layout();
+}
+
+void RouteToolbarDialog::OnEblVrm(wxCommandEvent&) {
+  if (m_plugin) m_plugin->BeginEblVrm();
 }
 
 void RouteToolbarDialog::OnPil(wxCommandEvent&) {
-  m_status->SetLabel(
-      _("Route PIL selected — route-leg selection is the next implementation step."));
-  Layout();
+  if (m_plugin) m_plugin->CancelInteractiveTool();
+  SetStatus(_("Route PIL selected — route-leg selection is the next implementation step."));
 }
 
 void RouteToolbarDialog::OnReport(wxCommandEvent&) {
-  m_status->SetLabel(
-      _("Route Report selected — CSV/HTML export follows after route data access."));
-  Layout();
+  if (m_plugin) m_plugin->CancelInteractiveTool();
+  SetStatus(_("Route Report selected — CSV/HTML export follows after persistent route data."));
 }
 
 void RouteToolbarDialog::OnClose(wxCloseEvent&) {
+  if (m_plugin) m_plugin->CancelInteractiveTool();
   Hide();
   if (m_plugin) m_plugin->OnDialogHidden();
 }
