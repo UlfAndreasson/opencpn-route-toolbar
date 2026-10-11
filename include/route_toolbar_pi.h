@@ -35,6 +35,7 @@ public:
   bool MouseEventHook(wxMouseEvent& event) override;
   void SetCursorLatLon(double lat, double lon) override;
   bool RenderOverlay(wxDC& dc, PlugIn_ViewPort* vp) override;
+  bool RenderGLOverlay(wxGLContext* pcontext, PlugIn_ViewPort* vp) override;
 
   void BeginEblVrm();
   void CancelInteractiveTool();
@@ -81,6 +82,9 @@ private:
   void CompleteEblVrm(double target_lat, double target_lon);
   void DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp, const RouteEblVrm& item,
                   bool preview) const;
+  void DrawEblVrmGL(PlugIn_ViewPort* vp, const RouteEblVrm& item,
+                    bool preview) const;
+  void DrawGlLabel(const wxString& label, int x, int y) const;
   static double NormalizeBearing(double bearing);
 
   wxWindow* m_parent_window{nullptr};
