@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "route_toolbar_pi.h"
+#include "route_toolbar_dialog.h"
 
 #include <algorithm>
 #include <cmath>
@@ -67,6 +68,8 @@ int route_toolbar_pi::FindNearestPil(double lat, double lon,
 
 void route_toolbar_pi::OnContextMenuItemCallback(int id) {
   if (id != m_context_edit_id || !m_has_cursor) return;
+  wxWindow* parent = m_dialog ? static_cast<wxWindow*>(m_dialog)
+                              : m_parent_window;
 
   const int ebl = FindNearestEblTarget(m_cursor_lat, m_cursor_lon, 0.04);
   if (ebl >= 0) {
@@ -83,12 +86,13 @@ void route_toolbar_pi::OnContextMenuItemCallback(int id) {
   wxMessageBox(
       _("No Route Toolbar object was found close to the right-click position. "
         "Right-click closer to an EBL/VRM target marker or a PIL line."),
-      _("Route Toolbar"), wxOK | wxICON_INFORMATION,
-      m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window);
+      _("Route Toolbar"), wxOK | wxICON_INFORMATION, parent);
 }
 
 void route_toolbar_pi::ShowPilActions(int index) {
   if (index < 0 || static_cast<size_t>(index) >= m_pils.size()) return;
+  wxWindow* parent = m_dialog ? static_cast<wxWindow*>(m_dialog)
+                              : m_parent_window;
 
   wxArrayString choices;
   choices.Add(_("Change offset"));
@@ -96,7 +100,7 @@ void route_toolbar_pi::ShowPilActions(int index) {
 
   const RoutePil& current = m_pils[static_cast<size_t>(index)];
   wxSingleChoiceDialog action(
-      m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
+      parent,
       wxString::Format(_("PIL on leg %d: %+.2f NM. What do you want to do?"),
                        current.leg_index, current.offset_nm),
       _("Route PIL"), choices);
@@ -108,7 +112,7 @@ void route_toolbar_pi::ShowPilActions(int index) {
   }
 
   wxTextEntryDialog offset_dialog(
-      m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
+      parent,
       _("Enter signed offset in NM. Positive = starboard, negative = port."),
       _("Change Route PIL offset"),
       wxString::Format("%+.2f", current.offset_nm));
@@ -118,8 +122,7 @@ void route_toolbar_pi::ShowPilActions(int index) {
   if (!offset_dialog.GetValue().ToDouble(&new_offset) ||
       std::fabs(new_offset) < 0.005 || std::fabs(new_offset) > 5.0) {
     wxMessageBox(_("Enter an offset between -5.00 and +5.00 NM, excluding zero."),
-                 _("Route PIL"), wxOK | wxICON_WARNING,
-                 m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window);
+                 _("Route PIL"), wxOK | wxICON_WARNING, parent);
     return;
   }
 
@@ -165,10 +168,12 @@ void route_toolbar_pi::ShowPilActions(int index) {
 
 void route_toolbar_pi::DeletePil(int index) {
   if (index < 0 || static_cast<size_t>(index) >= m_pils.size()) return;
+  wxWindow* parent = m_dialog ? static_cast<wxWindow*>(m_dialog)
+                              : m_parent_window;
   const RoutePil& pil = m_pils[static_cast<size_t>(index)];
 
   wxMessageDialog confirm(
-      m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
+      parent,
       wxString::Format(_("Delete PIL on leg %d (%+.2f NM)?"),
                        pil.leg_index, pil.offset_nm),
       _("Route PIL"), wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
