@@ -46,9 +46,7 @@ if(APPLE)
   # Plugins must use the wxWidgets runtime shipped inside OpenCPN.app rather
   # than loading a second Homebrew wxWidgets copy into the same process.
   add_custom_command(TARGET route_toolbar_pi POST_BUILD
-    COMMAND /bin/sh -c
-      "for lib in $$(otool -L '$<TARGET_FILE:route_toolbar_pi>' | awk '/libwx/ {print $$1}'); do base=$$(basename \"$$lib\"); install_name_tool -change \"$$lib\" \"@executable_path/../Frameworks/$$base\" '$<TARGET_FILE:route_toolbar_pi>'; done"
-    COMMAND /usr/bin/codesign --force --sign - "$<TARGET_FILE:route_toolbar_pi>"
+    COMMAND /bin/bash "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fix-macos-libs.sh" "$<TARGET_FILE:route_toolbar_pi>"
     VERBATIM
     COMMENT "Relinking wxWidgets dependencies to OpenCPN.app Frameworks and ad-hoc signing"
   )
