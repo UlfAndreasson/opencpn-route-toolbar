@@ -62,6 +62,7 @@ void route_toolbar_pi::BeginPil() {
   m_ebl_mode = EblMode::Idle;
   m_pending_start = RouteWaypointHit{};
   m_edit_item_index = -1;
+  m_edit_pil_index = -1;
   m_pending_leg = RouteLegHit{};
   m_pil_mode = PilMode::AwaitLeg;
   SetStatus(_("Route PIL: click a route leg. Then click the chart object / point where the parallel index line should pass. Right-click to cancel."));
@@ -173,8 +174,6 @@ bool route_toolbar_pi::BuildPilFromAnchor(const RouteLegHit& leg,
       leg.end_lat, leg.end_lon, offset_bearing, offset_distance,
       &shifted_end_lat, &shifted_end_lon);
 
-  // Extend the line slightly beyond the route leg so it reads as a PIL,
-  // while keeping it visually tied to that leg.
   const double extension = std::clamp(leg.distance_nm * 0.20, 0.08, 0.35);
   PositionBearingDistanceMercator_Plugin(
       shifted_start_lat, shifted_start_lon,
@@ -191,6 +190,19 @@ void route_toolbar_pi::CompletePil(double anchor_lat, double anchor_lon) {
   RoutePil item;
   if (!BuildPilFromAnchor(m_pending_leg, anchor_lat, anchor_lon, item)) {
     SetStatus(_("PIL offset is too small or invalid. Click a point clearly to port or starboard of the selected route leg, or right-click to cancel."));
+    return;
+  }
+
+  if (m_edit_pil_index >= 0 &&
+      static_cast<size_t>(m_edit_pil_index) < m_pils.size()) {
+    m_pils[static_cast<size_t>(m_edit_pil_index)] = item;
+    SavePersistentState();
+    SetStatus(wxString::Format(_("PIL moved to %+.2f NM (%s)."),
+                               item.offset_nm, PilSide(item.offset_nm)));
+    m_edit_pil_index = -1;
+    m_pending_leg = RouteLegHit{};
+    m_pil_mode = PilMode::Idle;
+    if (m_parent_window) RequestRefresh(m_parent_window);
     return;
   }
 
@@ -234,9 +246,11 @@ void route_toolbar_pi::BeginMovePilAnchor(int index) {
   m_edit_item_index = -1;
   m_pending_leg = leg;
   m_edit_pil_index = index;
-  m_pil_mode = PilMode::MoveExistingAnchor;
 
-  SetStatus(_("Move PIL graphically: drag/click to the new parallel offset. Release/click to save; right-click to cancel."));
+  // Reuse the normal live PIL preview: the line follows the cursor and the
+  // next click commits the new offset, replacing the existing PIL.
+  m_pil_mode = PilMode::AwaitOffsetPoint;
+  SetStatus(_("Move PIL graphically: move the cursor to the new offset and click to save. Right-click to cancel."));
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
