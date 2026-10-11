@@ -37,7 +37,7 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   m_ebl_button =
       new wxToggleButton(this, ID_ROUTE_EBL_VRM, _("Route EBL / VRM"));
   m_pil_button = new wxToggleButton(this, ID_ROUTE_PIL, _("Route PIL"));
-  auto* report = new wxButton(this, ID_ROUTE_REPORT, _("Route Report (PDF)"));
+  auto* report = new wxButton(this, ID_ROUTE_REPORT, _("Route Report"));
 
   top->Add(m_ebl_button, 0, wxEXPAND | wxALL, 10);
   top->Add(m_pil_button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
@@ -114,7 +114,7 @@ void RouteToolbarDialog::OnReport(wxCommandEvent&) {
   if (!m_plugin) return;
   SetToolButtons(false, false);
   m_plugin->CancelInteractiveTool();
-  m_plugin->ExportRoutePdfReport();
+  m_plugin->ExportRouteReport();
 }
 
 void RouteToolbarDialog::OnLabelSize(wxSpinEvent& event) {
