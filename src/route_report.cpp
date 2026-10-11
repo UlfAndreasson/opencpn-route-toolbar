@@ -208,8 +208,7 @@ void route_toolbar_pi::ExportRouteCsvReport() {
       << CsvField(_("Longitude")) << ";"
       << CsvField(_("Course to next (°T)")) << ";"
       << CsvField(_("Distance to next (NM)")) << ";"
-      << CsvField(_("PIL side")) << ";"
-      << CsvField(_("PIL offset (NM)")) << ";"
+      << CsvField(_("PIL")) << ";"
       << CsvField(_("Sight mark")) << ";"
       << CsvField(_("EBL bearing (°T)")) << ";"
       << CsvField(_("EBL range (NM)")) << ";"
@@ -219,68 +218,139 @@ void route_toolbar_pi::ExportRouteCsvReport() {
   size_t exported_route_ebls = 0;
   for (size_t i = 0; i < waypoints.size(); ++i) {
     const ReportWaypoint& wp = waypoints[i];
+
     std::vector<const RouteEblVrm*> matches;
 
     for (const RouteEblVrm& ebl : m_ebl_vrms) {
-      if (ebl.start_is_mark) continue;
+      if (ebl.start_is_mark)
+        continue;
+
       const bool same_route =
           ebl.route_guid == route_guid ||
-          (ebl.route_guid.IsEmpty() && ebl.route_name == route_name);
-      if (!same_route) continue;
+          (ebl.route_guid.IsEmpty() &&
+           ebl.route_name == route_name);
 
-      bool same_waypoint = !wp.guid.IsEmpty() && ebl.waypoint_guid == wp.guid;
-      if (!same_waypoint && ebl.waypoint_guid.IsEmpty()) {
+      if (!same_route)
+        continue;
+
+      bool same_waypoint =
+          !wp.guid.IsEmpty() &&
+          ebl.waypoint_guid == wp.guid;
+
+      if (!same_waypoint &&
+          ebl.waypoint_guid.IsEmpty()) {
         double start_distance = 0.0;
+
         DistanceBearingMercator_Plugin(
-            wp.lat, wp.lon, ebl.start_lat, ebl.start_lon, nullptr,
+            wp.lat,
+            wp.lon,
+            ebl.start_lat,
+            ebl.start_lon,
+            nullptr,
             &start_distance);
-        same_waypoint = start_distance <= 0.002;
+
+        same_waypoint =
+            start_distance <= 0.002;
       }
-      if (same_waypoint) matches.push_back(&ebl);
+
+      if (same_waypoint)
+        matches.push_back(&ebl);
     }
 
-    wxString pil_side;
-    wxString pil_offset;
+    std::vector<wxString> pil_rows;
+
     for (const RoutePil* pil : route_pils) {
-      if (pil->leg_index != static_cast<int>(i + 1)) continue;
-      if (!pil_side.IsEmpty()) {
-        pil_side += " / ";
-        pil_offset += " / ";
-      }
-      pil_side += pil->offset_nm >= 0.0 ? _("Stbd") : _("Port");
-      pil_offset += CsvNumber(std::fabs(pil->offset_nm), 2);
+      if (pil->leg_index !=
+          static_cast<int>(i + 1))
+        continue;
+
+      pil_rows.push_back(
+          wxString::Format(
+              "%s: %s NM",
+              pil->offset_nm >= 0.0
+                  ? "SB"
+                  : "BB",
+              CsvNumber(
+                  std::fabs(pil->offset_nm),
+                  2)));
     }
 
-    const auto append_base_columns = [&]() {
+    const size_t detail_rows =
+        std::max<size_t>(
+            1,
+            std::max(
+                matches.size(),
+                pil_rows.size()));
+
+    for (size_t r = 0;
+         r < detail_rows;
+         ++r) {
+      // Repeat WP/leg data on each CSV row.
+      // This makes filtering/sorting in Numbers/Excel sane.
       csv << (i + 1) << ";"
           << CsvField(wp.name) << ";"
-          << CsvField(FormatCoordinate(wp.lat, true)) << ";"
-          << CsvField(FormatCoordinate(wp.lon, false)) << ";";
+          << CsvField(
+                 FormatCoordinate(
+                     wp.lat, true))
+          << ";"
+          << CsvField(
+                 FormatCoordinate(
+                     wp.lon, false))
+          << ";";
 
-      if (std::isfinite(wp.course_to_next))
-        csv << wxString::Format("%03.0f", wp.course_to_next);
+      if (std::isfinite(
+              wp.course_to_next))
+        csv << wxString::Format(
+            "%03.0f",
+            wp.course_to_next);
+
       csv << ";";
-      if (std::isfinite(wp.distance_to_next))
-        csv << CsvNumber(wp.distance_to_next, 2);
-      csv << ";"
-          << CsvField(pil_side) << ";"
-          << CsvField(pil_offset) << ";";
-    };
 
-    if (matches.empty()) {
-      append_base_columns();
-      csv << ";;;;;\r\n";
-      continue;
-    }
+      if (std::isfinite(
+              wp.distance_to_next))
+        csv << CsvNumber(
+            wp.distance_to_next,
+            2);
 
-    for (const RouteEblVrm* ebl : matches) {
-      append_base_columns();
-      csv << CsvField(ebl->target_name) << ";"
-          << wxString::Format("%03.0f", ebl->bearing_true) << ";"
-          << CsvNumber(ebl->range_nm, 2) << ";"
-          << CsvField(FormatCoordinate(ebl->target_lat, true)) << ";"
-          << CsvField(FormatCoordinate(ebl->target_lon, false)) << "\r\n";
-      ++exported_route_ebls;
+      csv << ";";
+
+      if (r < pil_rows.size())
+        csv << CsvField(
+            pil_rows[r]);
+
+      csv << ";";
+
+      if (r < matches.size()) {
+        const RouteEblVrm* ebl =
+            matches[r];
+
+        csv << CsvField(
+                   ebl->target_name)
+            << ";"
+            << wxString::Format(
+                   "%03.0f",
+                   ebl->bearing_true)
+            << ";"
+            << CsvNumber(
+                   ebl->range_nm,
+                   2)
+            << ";"
+            << CsvField(
+                   FormatCoordinate(
+                       ebl->target_lat,
+                       true))
+            << ";"
+            << CsvField(
+                   FormatCoordinate(
+                       ebl->target_lon,
+                       false))
+            << "\r\n";
+
+        ++exported_route_ebls;
+      } else {
+        // Five empty sight-mark fields.
+        csv << ";;;;\r\n";
+      }
     }
   }
 

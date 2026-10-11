@@ -25,12 +25,11 @@ constexpr double kBottom = 558.0;
 constexpr double kRowH = 18.0;
 constexpr double kHeadH = 22.0;
 
-const std::vector<double> kWidths = {26, 58, 80, 84, 46, 46, 46,
-                                     50, 88, 45, 48, 84, 93};
+const std::vector<double> kWidths = {
+    26, 58, 76, 80, 46, 46, 112, 84, 45, 48, 80, 93};
 const std::vector<wxString> kHeaders = {
     "WP", "Waypoint", "Latitude", "Longitude", "Course °T", "Dist NM",
-    "PIL side", "PIL NM", "Sight mark", "EBL °T", "Range NM",
-    "Sight lat", "Sight lon"};
+    "PIL", "Sight mark", "EBL °T", "Range NM", "Sight lat", "Sight lon"};
 
 const std::vector<double> kMarkWidths = {96, 102, 108, 122, 66, 70, 108, 122};
 const std::vector<wxString> kMarkHeaders = {
@@ -52,8 +51,7 @@ struct WaypointRow {
   wxString name;
   double course{NAN};
   double distance{NAN};
-  wxString pil_side;
-  wxString pil_offset;
+  std::vector<wxString> pils;
   std::vector<SightRow> sights;
 };
 
@@ -321,20 +319,26 @@ void route_toolbar_pi::ExportRoutePdfReport() {
   }
 
   size_t pil_count = 0;
+
   for (const RoutePil& pil : m_pils) {
-    const bool same_route = pil.route_guid == route_guid ||
-        (pil.route_guid.IsEmpty() && pil.route_name == route_name);
-    if (!same_route || pil.leg_index <= 0 ||
+    const bool same_route =
+        pil.route_guid == route_guid ||
+        (pil.route_guid.IsEmpty() &&
+         pil.route_name == route_name);
+
+    if (!same_route ||
+        pil.leg_index <= 0 ||
         static_cast<size_t>(pil.leg_index) > rows.size())
       continue;
 
-    WaypointRow& row = rows[static_cast<size_t>(pil.leg_index - 1)];
-    if (!row.pil_side.IsEmpty()) {
-      row.pil_side += " / ";
-      row.pil_offset += " / ";
-    }
-    row.pil_side += pil.offset_nm >= 0.0 ? "Stbd" : "Port";
-    row.pil_offset += wxString::Format("%.2f", std::fabs(pil.offset_nm));
+    WaypointRow& row =
+        rows[static_cast<size_t>(pil.leg_index - 1)];
+
+    row.pils.push_back(
+        wxString::Format("%s: %.2f NM",
+                         pil.offset_nm >= 0.0 ? "SB" : "BB",
+                         std::fabs(pil.offset_nm)));
+
     ++pil_count;
   }
 
@@ -349,49 +353,132 @@ void route_toolbar_pi::ExportRoutePdfReport() {
 
   for (size_t i = 0; i < rows.size(); ++i) {
     const WaypointRow& wp = rows[i];
-    const size_t n = std::max<size_t>(1, wp.sights.size());
-    const double h = n * kRowH;
+
+    const size_t detail_rows =
+        std::max<size_t>(
+            1,
+            std::max(wp.sights.size(), wp.pils.size()));
+
+    const double h = detail_rows * kRowH;
+
     if (y + h > kBottom) {
       finish_page();
       PageHeader(page, route_name, total, true);
       y = 50.0 + kHeadH;
     }
 
-    const double fill = (i % 2 == 0) ? 0.985 : 0.955;
+    const double fill =
+        (i % 2 == 0) ? 0.985 : 0.955;
+
+    // --------------------------------------------------------
+    // Fixed WP/leg columns span the complete WP block.
+    // --------------------------------------------------------
+
     double x = kMargin;
+
     const std::vector<wxString> base = {
-        wxString::Format("%lu", static_cast<unsigned long>(i + 1)), wp.name,
-        Coord(wp.lat, true), Coord(wp.lon, false),
-        std::isfinite(wp.course) ? wxString::Format("%03.0f", wp.course) : wxString(),
-        std::isfinite(wp.distance) ? wxString::Format("%.2f", wp.distance) : wxString(),
-        wp.pil_side, wp.pil_offset};
-    for (size_t c = 0; c < 8; ++c) {
-      page.Rect(x, y, kWidths[c], h, fill);
-      page.Text(x + 3, y + 6, Fit(base[c], kWidths[c]), 7.0, c == 0);
-      x += kWidths[c];
+        wxString::Format(
+            "%lu",
+            static_cast<unsigned long>(i + 1)),
+        wp.name,
+        Coord(wp.lat, true),
+        Coord(wp.lon, false),
+        std::isfinite(wp.course)
+            ? wxString::Format("%03.0f", wp.course)
+            : wxString(),
+        std::isfinite(wp.distance)
+            ? wxString::Format("%.2f", wp.distance)
+            : wxString()
+    };
+
+    for (size_t col = 0; col < 6; ++col) {
+      page.Rect(x, y, kWidths[col], h, fill);
+      page.Text(
+          x + 3,
+          y + 6,
+          Fit(base[col], kWidths[col]),
+          7.0,
+          col == 0);
+
+      x += kWidths[col];
     }
 
-    const double sx0 = x;
-    for (size_t r = 0; r < n; ++r) {
-      double sx = sx0;
+    // --------------------------------------------------------
+    // Detail rows:
+    // PIL + corresponding EBL/VRM sight information.
+    // --------------------------------------------------------
+
+    const double detail_x = x;
+
+    for (size_t r = 0; r < detail_rows; ++r) {
       const double ry = y + r * kRowH;
-      for (size_t c = 8; c < kWidths.size(); ++c) {
-        page.Rect(sx, ry, kWidths[c], kRowH, fill);
-        sx += kWidths[c];
+      double sx = detail_x;
+
+      // PIL
+      page.Rect(
+          sx, ry,
+          kWidths[6],
+          kRowH,
+          fill);
+
+      if (r < wp.pils.size()) {
+        page.Text(
+            sx + 3,
+            ry + 6,
+            Fit(wp.pils[r], kWidths[6]),
+            7.0);
       }
+
+      sx += kWidths[6];
+
+      // Sight-mark columns.
+      for (size_t col = 7;
+           col < kWidths.size();
+           ++col) {
+        page.Rect(
+            sx, ry,
+            kWidths[col],
+            kRowH,
+            fill);
+
+        sx += kWidths[col];
+      }
+
       if (r < wp.sights.size()) {
-        const SightRow& s = wp.sights[r];
-        const std::vector<wxString> vals = {
-            s.name, wxString::Format("%03.0f", s.bearing),
-            wxString::Format("%.2f", s.range_nm), Coord(s.lat, true),
-            Coord(s.lon, false)};
-        sx = sx0;
-        for (size_t c = 0; c < vals.size(); ++c) {
-          page.Text(sx + 3, ry + 6, Fit(vals[c], kWidths[c + 8]), 7.0);
-          sx += kWidths[c + 8];
+        const SightRow& sight = wp.sights[r];
+
+        const std::vector<wxString> values = {
+            sight.name,
+            wxString::Format(
+                "%03.0f",
+                sight.bearing),
+            wxString::Format(
+                "%.2f",
+                sight.range_nm),
+            Coord(sight.lat, true),
+            Coord(sight.lon, false)
+        };
+
+        sx = detail_x + kWidths[6];
+
+        for (size_t col = 0;
+             col < values.size();
+             ++col) {
+          const size_t width_index = col + 7;
+
+          page.Text(
+              sx + 3,
+              ry + 6,
+              Fit(
+                  values[col],
+                  kWidths[width_index]),
+              7.0);
+
+          sx += kWidths[width_index];
         }
       }
     }
+
     y += h;
   }
 

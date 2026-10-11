@@ -12,6 +12,7 @@
 
 class RouteToolbarDialog;
 class wxFileConfig;
+class wxTimer;
 class wxMenu;
 class wxMenuItem;
 
@@ -51,6 +52,7 @@ public:
   void CancelInteractiveTool();
   void OnDialogHidden();
   void EnsureContextMenu();
+  void OnDelayedStateLoad();
 
   int GetLabelFontSize() const { return m_label_font_size; }
   void SetLabelFontSize(int point_size);
@@ -99,6 +101,12 @@ private:
     wxString start_mark_guid;
     wxString start_mark_name;
     wxString target_name;
+
+    // Label position relative to the target in screen pixels.
+    // Automatic placement is used until the user moves the label.
+    bool label_manual{false};
+    int label_dx_px{0};
+    int label_dy_px{0};
   };
 
   struct RouteLegHit {
@@ -147,6 +155,7 @@ private:
     AwaitRoutePoint,
     AwaitTarget,
     MoveExistingTarget,
+    MoveExistingLabel,
   };
 
   enum class PilMode {
@@ -174,6 +183,10 @@ private:
   void ShowEblTargetActions(int index);
   void BeginMoveEblTarget(int index);
   bool CommitMoveEblTarget(double target_lat, double target_lon);
+
+  void BeginMoveEblLabel(int index);
+  bool CommitMoveEblLabel();
+  void ResetEblLabel(int index);
   void RenameEblTarget(int index);
   void DeleteEblTarget(int index);
   void RecalculateEbl(RouteEblVrm& item) const;
@@ -199,6 +212,11 @@ private:
   void LoadPersistentState();
   void SavePersistentState() const;
   wxFont GetEblLabelFont() const;
+  wxPoint FindSafeLabelBox(PlugIn_ViewPort* vp,
+                           const RouteEblVrm& item,
+                           const wxPoint& target_px,
+                           int box_width,
+                           int box_height) const;
 
   void DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp, const RouteEblVrm& item,
                   bool preview) const;
@@ -223,16 +241,20 @@ private:
   RouteWaypointHit m_pending_start;
   std::vector<RouteEblVrm> m_ebl_vrms;
   int m_edit_item_index{-1};
+  int m_pending_label_dx_px{0};
+  int m_pending_label_dy_px{0};
 
   PilMode m_pil_mode{PilMode::Idle};
   RouteLegHit m_pending_leg;
   std::vector<RoutePil> m_pils;
   int m_edit_pil_index{-1};
 
+  wxTimer* m_delayed_state_load{nullptr};
   int m_label_font_size{14};
   wxColour m_ebl_colour{210, 0, 220};
   wxColour m_pil_colour{0, 105, 125};
   double m_cursor_lat{0.0};
   double m_cursor_lon{0.0};
   bool m_has_cursor{false};
+  bool m_state_loaded{false};
 };
