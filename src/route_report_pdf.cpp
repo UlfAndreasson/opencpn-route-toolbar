@@ -24,6 +24,8 @@ constexpr double kMargin = 24.0;
 constexpr double kBottom = 558.0;
 constexpr double kRowH = 18.0;
 constexpr double kHeadH = 22.0;
+constexpr double kSectionGap = 14.0;
+constexpr double kSectionTitleH = 16.0;
 
 const std::vector<double> kWidths = {26, 58, 80, 84, 46, 46, 46,
                                      50, 88, 45, 48, 84, 93};
@@ -396,25 +398,21 @@ void route_toolbar_pi::ExportRoutePdfReport() {
   }
 
   const size_t total_sights = route_sight_count + mark_rows.size();
-  if (mark_rows.empty()) {
-    if (y + 28.0 > kBottom) {
+
+  if (!mark_rows.empty()) {
+    const double section_height = kSectionGap + kSectionTitleH + kHeadH +
+                                  static_cast<double>(mark_rows.size()) * kRowH;
+    if (y + section_height > kBottom) {
       finish_page();
-      page.Text(kMargin, 28, "Route Report - " + route_name, 14.0, true);
-      y = 54.0;
+      MarkPageHeader(page, route_name, false);
+      y = 50.0 + kHeadH;
     } else {
-      y += 18.0;
+      y += kSectionGap;
+      page.Text(kMargin, y, "EBL/VRM from Marks", 10.0, true);
+      y += kSectionTitleH;
+      MarkTableHeader(page, y);
+      y += kHeadH;
     }
-    page.Text(kMargin, y,
-              wxString::Format("Summary: %lu waypoints, %lu EBL/VRM sight marks, %lu PIL, %.2f NM total",
-                               static_cast<unsigned long>(rows.size()),
-                               static_cast<unsigned long>(total_sights),
-                               static_cast<unsigned long>(pil_count), total),
-              8.0, true);
-    finish_page();
-  } else {
-    finish_page();
-    MarkPageHeader(page, route_name, false);
-    y = 50.0 + kHeadH;
 
     for (size_t i = 0; i < mark_rows.size(); ++i) {
       if (y + kRowH > kBottom) {
@@ -437,14 +435,24 @@ void route_toolbar_pi::ExportRoutePdfReport() {
       }
       y += kRowH;
     }
+  }
 
-    if (y + 28.0 > kBottom) {
-      finish_page();
-      page.Text(kMargin, 28, "Route Report - " + route_name, 14.0, true);
-      y = 54.0;
-    } else {
-      y += 18.0;
-    }
+  if (y + 28.0 > kBottom) {
+    finish_page();
+    page.Text(kMargin, 28, "Route Report - " + route_name, 14.0, true);
+    y = 54.0;
+  } else {
+    y += 18.0;
+  }
+
+  if (mark_rows.empty()) {
+    page.Text(kMargin, y,
+              wxString::Format("Summary: %lu waypoints, %lu EBL/VRM sight marks, %lu PIL, %.2f NM total",
+                               static_cast<unsigned long>(rows.size()),
+                               static_cast<unsigned long>(total_sights),
+                               static_cast<unsigned long>(pil_count), total),
+              8.0, true);
+  } else {
     page.Text(kMargin, y,
               wxString::Format("Summary: %lu waypoints, %lu EBL/VRM sight marks (%lu from marks), %lu PIL, %.2f NM total",
                                static_cast<unsigned long>(rows.size()),
@@ -452,8 +460,8 @@ void route_toolbar_pi::ExportRoutePdfReport() {
                                static_cast<unsigned long>(mark_rows.size()),
                                static_cast<unsigned long>(pil_count), total),
               8.0, true);
-    finish_page();
   }
+  finish_page();
 
   const wxString default_name = SafeName(route_name) + "-route-report.pdf";
   wxFileDialog save(parent, _("Save Route Report PDF"), wxEmptyString,
