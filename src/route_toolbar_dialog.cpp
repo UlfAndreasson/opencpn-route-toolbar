@@ -53,7 +53,7 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
 
   m_status = new wxStaticText(
       this, wxID_ANY,
-      _("v0.2: Route EBL/VRM is ready. Select the tool, then click a route waypoint."));
+      _("Route EBL/VRM and Route Report are ready."));
   m_status->Wrap(360);
   top->Add(new wxStaticLine(this), 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
   top->Add(m_status, 0, wxEXPAND | wxALL, 10);
@@ -88,8 +88,7 @@ void RouteToolbarDialog::OnPil(wxCommandEvent&) {
 }
 
 void RouteToolbarDialog::OnReport(wxCommandEvent&) {
-  if (m_plugin) m_plugin->CancelInteractiveTool();
-  SetStatus(_("Route Report selected — CSV/HTML export follows after persistent route data."));
+  if (m_plugin) m_plugin->ExportRouteReport();
 }
 
 void RouteToolbarDialog::OnLabelSize(wxSpinEvent& event) {
