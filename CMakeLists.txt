@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(route_toolbar_pi VERSION 0.2.0 LANGUAGES CXX)
+project(route_toolbar_pi VERSION 0.2.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,6 +41,8 @@ target_link_libraries(route_toolbar_pi PRIVATE ${wxWidgets_LIBRARIES} ocpn::api)
 target_compile_definitions(route_toolbar_pi PRIVATE MAKING_PLUGIN)
 
 if(APPLE)
+  find_library(OPENGL_FRAMEWORK OpenGL REQUIRED)
+  target_link_libraries(route_toolbar_pi PRIVATE ${OPENGL_FRAMEWORK})
   target_link_options(route_toolbar_pi PRIVATE "LINKER:-undefined,dynamic_lookup")
 
   # Plugins must use the wxWidgets runtime shipped inside OpenCPN.app rather
