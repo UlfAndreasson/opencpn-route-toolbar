@@ -7,6 +7,7 @@
 #include <limits>
 #include <set>
 
+#include <wx/app.h>
 #include <wx/brush.h>
 #include <wx/choicdlg.h>
 #include <wx/dc.h>
@@ -17,6 +18,7 @@
 #include <wx/font.h>
 #include <wx/image.h>
 #include <wx/intl.h>
+#include <wx/log.h>
 #include <wx/msgdlg.h>
 #include <wx/pen.h>
 #include <wx/stdpaths.h>
@@ -43,7 +45,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 3;
-constexpr int kPluginVersionPatch = 2;
+constexpr int kPluginVersionPatch = 3;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kDefaultArcWidthDeg = 30.0;
@@ -153,8 +155,11 @@ route_toolbar_pi::route_toolbar_pi(void* ppimgr)
 route_toolbar_pi::~route_toolbar_pi() = default;
 
 int route_toolbar_pi::Init() {
+  wxLogMessage("Route Toolbar: Init begin");
   m_parent_window = GetOCPNCanvasWindow();
   LoadPersistentState();
+  wxLogMessage("Route Toolbar: state loaded: %zu EBL/VRM, %zu PIL",
+               m_ebl_vrms.size(), m_pils.size());
 
   const wxString svg_path = EnsureToolbarSvg();
   if (!svg_path.IsEmpty()) {
@@ -169,9 +174,19 @@ int route_toolbar_pi::Init() {
         _("Route Toolbar"), _("Route planning tools: EBL/VRM, PIL and report"),
         nullptr, -1, 0, this);
   }
+  wxLogMessage("Route Toolbar: toolbar inserted, id=%d", m_toolbar_id);
 
-  EnsureContextMenu();
+  // Do not register canvas context-menu items synchronously from Init().
+  // OpenCPN is still constructing the frame/menu infrastructure at this point
+  // on some macOS builds. Queue registration for the GUI event loop instead.
+  if (wxTheApp) {
+    wxTheApp->CallAfter([this]() {
+      wxLogMessage("Route Toolbar: deferred context-menu registration");
+      EnsureContextMenu();
+    });
+  }
 
+  wxLogMessage("Route Toolbar: Init complete");
   return WANTS_TOOLBAR_CALLBACK | INSTALLS_TOOLBAR_TOOL |
          WANTS_CURSOR_LATLON | WANTS_MOUSE_EVENTS | WANTS_OVERLAY_CALLBACK |
          WANTS_OPENGL_OVERLAY_CALLBACK;
@@ -213,6 +228,8 @@ void route_toolbar_pi::OnToolbarToolCallback(int id) {
 
 void route_toolbar_pi::ShowToolWindow() {
   if (!m_dialog) m_dialog = new RouteToolbarDialog(m_parent_window, this);
+  // Safe fallback in case deferred registration has not run yet.
+  EnsureContextMenu();
   m_dialog->Show();
   m_dialog->Raise();
   m_dialog_visible = true;
@@ -359,41 +376,64 @@ bool route_toolbar_pi::MouseEventHook(wxMouseEvent& event) {
                 _("'. Now click the lighthouse, buoy, beacon or other sight mark."));
     } else {
       wxString route_name = hit.route_name;
-      if (route_name.IsEmpty()) route_name = _("Unnamed route");
-      SetStatus(_("Start selected: ") + route_name + _(" / ") + start_name +
-                _(". Now click the lighthouse, buoy, beacon or other sight mark."));
+      if (route_name.IsEmpty()) route_name = _("route");
+      SetStatus(_("Start selected: ") + start_name + _(" on '") +
+                route_name + _("'. Now click the lighthouse, buoy, beacon or other sight mark."));
     }
     if (m_parent_window) RequestRefresh(m_parent_window);
     return true;
   }
+
   if (m_ebl_mode == EblMode::AwaitTarget) {
     CompleteEblVrm(m_cursor_lat, m_cursor_lon);
     return true;
   }
+
   return false;
+}
+
+void route_toolbar_pi::OnDialogHidden() {
+  m_dialog_visible = false;
+  CancelInteractiveTool();
+}
+
+void route_toolbar_pi::SetStatus(const wxString& text) {
+  if (m_dialog) m_dialog->SetStatus(text);
+}
+
+void route_toolbar_pi::UpdateToolButtons() {
+  if (!m_dialog) return;
+  m_dialog->SetEblActive(m_ebl_mode != EblMode::Idle);
+  m_dialog->SetPilActive(m_pil_mode != PilMode::Idle);
 }
 
 route_toolbar_pi::RouteWaypointHit route_toolbar_pi::FindNearestRouteWaypoint(
     double lat, double lon, double max_distance_nm) const {
   RouteWaypointHit best;
   best.distance_nm = std::numeric_limits<double>::max();
+
   const wxArrayString route_guids = GetRouteGUIDArray();
-  for (size_t i = 0; i < route_guids.GetCount(); ++i) {
-    auto route = GetRoute_Plugin(route_guids[i]);
+  for (size_t r = 0; r < route_guids.GetCount(); ++r) {
+    auto route = GetRoute_Plugin(route_guids[r]);
     if (!route || !route->pWaypointList) continue;
-    for (auto node = route->pWaypointList->GetFirst(); node; node = node->GetNext()) {
+
+    for (auto node = route->pWaypointList->GetFirst(); node;
+         node = node->GetNext()) {
       PlugIn_Waypoint* waypoint = node->GetData();
       if (!waypoint) continue;
-      double distance_nm = 0.0;
-      DistanceBearingMercator_Plugin(lat, lon, waypoint->m_lat, waypoint->m_lon,
-                                     nullptr, &distance_nm);
-      if (distance_nm > max_distance_nm || distance_nm >= best.distance_nm) continue;
+
+      double bearing = 0.0;
+      double distance = 0.0;
+      DistanceBearingMercator_Plugin(waypoint->m_lat, waypoint->m_lon,
+                                     lat, lon, &bearing, &distance);
+      if (distance > max_distance_nm || distance >= best.distance_nm) continue;
+
       best.found = true;
       best.is_mark = false;
       best.lat = waypoint->m_lat;
       best.lon = waypoint->m_lon;
-      best.distance_nm = distance_nm;
-      best.route_guid = route_guids[i];
+      best.distance_nm = distance;
+      best.route_guid = route_guids[r];
       best.route_name = route->m_NameString;
       best.waypoint_guid = waypoint->m_GUID;
       best.waypoint_name = waypoint->m_MarkName;
@@ -406,124 +446,187 @@ route_toolbar_pi::RouteWaypointHit route_toolbar_pi::FindNearestStandaloneMark(
     double lat, double lon, double max_distance_nm) const {
   RouteWaypointHit best;
   best.distance_nm = std::numeric_limits<double>::max();
+
+  const wxArrayString waypoint_guids = GetWaypointGUIDArray();
   std::set<wxString> route_waypoint_guids;
   const wxArrayString route_guids = GetRouteGUIDArray();
-  for (size_t i = 0; i < route_guids.GetCount(); ++i) {
-    auto route = GetRoute_Plugin(route_guids[i]);
+  for (size_t r = 0; r < route_guids.GetCount(); ++r) {
+    auto route = GetRoute_Plugin(route_guids[r]);
     if (!route || !route->pWaypointList) continue;
-    for (auto node = route->pWaypointList->GetFirst(); node; node = node->GetNext()) {
-      PlugIn_Waypoint* wp = node->GetData();
-      if (wp && !wp->m_GUID.IsEmpty()) route_waypoint_guids.insert(wp->m_GUID);
+    for (auto node = route->pWaypointList->GetFirst(); node;
+         node = node->GetNext()) {
+      if (node->GetData()) route_waypoint_guids.insert(node->GetData()->m_GUID);
     }
   }
-  const wxArrayString waypoint_guids = GetWaypointGUIDArray();
+
   for (size_t i = 0; i < waypoint_guids.GetCount(); ++i) {
     const wxString guid = waypoint_guids[i];
-    if (guid.IsEmpty() || route_waypoint_guids.count(guid) != 0) continue;
-    PlugIn_Waypoint mark;
-    if (!GetSingleWaypoint(guid, &mark)) continue;
-    double distance_nm = 0.0;
-    DistanceBearingMercator_Plugin(lat, lon, mark.m_lat, mark.m_lon,
-                                   nullptr, &distance_nm);
-    if (distance_nm > max_distance_nm || distance_nm >= best.distance_nm) continue;
+    if (route_waypoint_guids.count(guid)) continue;
+    auto waypoint = GetSingleWaypoint(guid);
+    if (!waypoint) continue;
+
+    double bearing = 0.0;
+    double distance = 0.0;
+    DistanceBearingMercator_Plugin(waypoint->m_lat, waypoint->m_lon,
+                                   lat, lon, &bearing, &distance);
+    if (distance > max_distance_nm || distance >= best.distance_nm) continue;
+
     best.found = true;
     best.is_mark = true;
-    best.lat = mark.m_lat;
-    best.lon = mark.m_lon;
-    best.distance_nm = distance_nm;
+    best.lat = waypoint->m_lat;
+    best.lon = waypoint->m_lon;
+    best.distance_nm = distance;
     best.waypoint_guid = guid;
-    best.waypoint_name = mark.m_MarkName;
+    best.waypoint_name = waypoint->m_MarkName;
   }
   return best;
 }
 
 route_toolbar_pi::RouteWaypointHit route_toolbar_pi::FindNearestEblStart(
     double lat, double lon, double max_distance_nm) const {
-  RouteWaypointHit route_wp = FindNearestRouteWaypoint(lat, lon, max_distance_nm);
-  RouteWaypointHit mark = FindNearestStandaloneMark(lat, lon, max_distance_nm);
-  if (!route_wp.found) return mark;
-  if (!mark.found) return route_wp;
-  return mark.distance_nm < route_wp.distance_nm ? mark : route_wp;
+  const RouteWaypointHit route_hit =
+      FindNearestRouteWaypoint(lat, lon, max_distance_nm);
+  const RouteWaypointHit mark_hit =
+      FindNearestStandaloneMark(lat, lon, max_distance_nm);
+
+  if (!route_hit.found) return mark_hit;
+  if (!mark_hit.found) return route_hit;
+  return mark_hit.distance_nm < route_hit.distance_nm ? mark_hit : route_hit;
 }
 
 bool route_toolbar_pi::RefreshEblStartFromMark(RouteEblVrm& item) const {
   if (!item.start_is_mark || item.start_mark_guid.IsEmpty()) return false;
-  PlugIn_Waypoint mark;
-  if (!GetSingleWaypoint(item.start_mark_guid, &mark)) return false;
-  item.start_lat = mark.m_lat;
-  item.start_lon = mark.m_lon;
-  if (!mark.m_MarkName.IsEmpty()) item.start_mark_name = mark.m_MarkName;
-  return true;
+  auto waypoint = GetSingleWaypoint(item.start_mark_guid);
+  if (!waypoint) return false;
+  const bool changed = std::fabs(item.start_lat - waypoint->m_lat) > 1e-10 ||
+                       std::fabs(item.start_lon - waypoint->m_lon) > 1e-10;
+  item.start_lat = waypoint->m_lat;
+  item.start_lon = waypoint->m_lon;
+  if (item.start_mark_name.IsEmpty()) item.start_mark_name = waypoint->m_MarkName;
+  return changed;
+}
+
+void route_toolbar_pi::RecalculateEbl(RouteEblVrm& item) const {
+  double bearing = 0.0;
+  double distance = 0.0;
+  DistanceBearingMercator_Plugin(item.target_lat, item.target_lon,
+                                 item.start_lat, item.start_lon,
+                                 &bearing, &distance);
+  item.bearing_true = NormalizeBearing(bearing);
+  item.range_nm = distance;
+}
+
+route_toolbar_pi::RouteWaypointHit route_toolbar_pi::FindNearestEblStart(
+    double lat, double lon, double max_distance_nm) const;
+
+void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
+  if (!m_pending_start.found) {
+    m_ebl_mode = EblMode::AwaitRoutePoint;
+    SetStatus(_("No start waypoint/mark selected. Click a route waypoint or OpenCPN mark first."));
+    return;
+  }
+
+  RouteEblVrm item;
+  item.start_lat = m_pending_start.lat;
+  item.start_lon = m_pending_start.lon;
+  item.target_lat = target_lat;
+  item.target_lon = target_lon;
+  item.arc_width_deg = kDefaultArcWidthDeg;
+  item.route_guid = m_pending_start.route_guid;
+  item.route_name = m_pending_start.route_name;
+  item.waypoint_guid = m_pending_start.is_mark ? wxString() : m_pending_start.waypoint_guid;
+  item.waypoint_name = m_pending_start.is_mark ? wxString() : m_pending_start.waypoint_name;
+  item.start_is_mark = m_pending_start.is_mark;
+  item.start_mark_guid = m_pending_start.is_mark ? m_pending_start.waypoint_guid : wxString();
+  item.start_mark_name = m_pending_start.is_mark ? m_pending_start.waypoint_name : wxString();
+  RecalculateEbl(item);
+
+  if (!std::isfinite(item.range_nm) || item.range_nm < 0.001) {
+    SetStatus(_("Target is too close to the start point. Click another sight mark."));
+    return;
+  }
+
+  if (m_parent_window) RequestRefresh(m_parent_window);
+
+  wxTextEntryDialog name_dialog(
+      m_parent_window,
+      _("Name this sight mark / target. Examples: Rivö fyr, No 28, Gullisken."),
+      _("Route EBL / VRM"));
+  const int rc = name_dialog.ShowModal();
+  if (rc != wxID_OK) {
+    m_pending_start = RouteWaypointHit{};
+    m_ebl_mode = EblMode::AwaitRoutePoint;
+    SetStatus(_("Target cancelled. Click another route waypoint or OpenCPN mark, or right-click to finish."));
+    if (m_parent_window) RequestRefresh(m_parent_window);
+    return;
+  }
+
+  item.target_name = name_dialog.GetValue();
+  item.target_name.Trim(true).Trim(false);
+  if (item.target_name.IsEmpty()) {
+    item.target_name = wxString::Format(_("Sight mark %lu"),
+                                        static_cast<unsigned long>(m_ebl_vrms.size() + 1));
+  }
+
+  m_ebl_vrms.push_back(item);
+  SavePersistentState();
+
+  wxString start_name = item.start_is_mark ? item.start_mark_name : item.waypoint_name;
+  if (start_name.IsEmpty()) start_name = item.start_is_mark ? _("Mark") : _("WP");
+  SetStatus(wxString::Format(
+      _("%s → %s  %03.0f°T  %.2f NM. Created with a %.0f° VRM arc. Click another start waypoint/mark, or right-click to finish."),
+      start_name, item.target_name, item.bearing_true, item.range_nm,
+      item.arc_width_deg));
+
+  m_pending_start = RouteWaypointHit{};
+  m_ebl_mode = EblMode::AwaitRoutePoint;
+  if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
 int route_toolbar_pi::FindNearestEblTarget(double lat, double lon,
-                                           double max_distance_nm) const {
+                                            double max_distance_nm) const {
   int best_index = -1;
   double best_distance = std::numeric_limits<double>::max();
   for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
-    double distance_nm = 0.0;
-    DistanceBearingMercator_Plugin(lat, lon, m_ebl_vrms[i].target_lat,
-                                   m_ebl_vrms[i].target_lon, nullptr, &distance_nm);
-    if (distance_nm <= max_distance_nm && distance_nm < best_distance) {
+    double bearing = 0.0;
+    double distance = 0.0;
+    DistanceBearingMercator_Plugin(m_ebl_vrms[i].target_lat,
+                                   m_ebl_vrms[i].target_lon,
+                                   lat, lon, &bearing, &distance);
+    if (distance <= max_distance_nm && distance < best_distance) {
+      best_distance = distance;
       best_index = static_cast<int>(i);
-      best_distance = distance_nm;
     }
   }
   return best_index;
-}
-
-void route_toolbar_pi::ShowEblTargetActions(int index) {
-  if (index < 0 || static_cast<size_t>(index) >= m_ebl_vrms.size()) return;
-  const RouteEblVrm& item = m_ebl_vrms[static_cast<size_t>(index)];
-  wxArrayString choices;
-  choices.Add(_("Move target"));
-  choices.Add(_("Rename"));
-  choices.Add(_("Delete"));
-  wxString target_name = item.target_name;
-  if (target_name.IsEmpty()) target_name = _("Unnamed sight mark");
-  wxSingleChoiceDialog dialog(
-      m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
-      _("What do you want to do with ") + target_name + _("?"),
-      _("Route EBL / VRM"), choices);
-  if (dialog.ShowModal() != wxID_OK) return;
-  switch (dialog.GetSelection()) {
-    case 0: BeginMoveEblTarget(index); break;
-    case 1: RenameEblTarget(index); break;
-    case 2: DeleteEblTarget(index); break;
-    default: break;
-  }
 }
 
 void route_toolbar_pi::BeginMoveEblTarget(int index) {
   if (index < 0 || static_cast<size_t>(index) >= m_ebl_vrms.size()) return;
   m_edit_item_index = index;
   m_ebl_mode = EblMode::MoveExistingTarget;
-  wxString name = m_ebl_vrms[static_cast<size_t>(index)].target_name;
-  if (name.IsEmpty()) name = _("sight mark");
-  SetStatus(_("Move ") + name + _(" — click the new target position. Right-click to cancel."));
+  m_pil_mode = PilMode::Idle;
+  m_pending_leg = RouteLegHit{};
+  SetStatus(_("Move EBL/VRM target: move the cursor to the new sight mark and click. Right-click to cancel."));
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
-bool route_toolbar_pi::CommitMoveEblTarget(double target_lat, double target_lon) {
-  if (m_edit_item_index < 0 || static_cast<size_t>(m_edit_item_index) >= m_ebl_vrms.size()) {
+bool route_toolbar_pi::CommitMoveEblTarget(double target_lat,
+                                            double target_lon) {
+  if (m_edit_item_index < 0 ||
+      static_cast<size_t>(m_edit_item_index) >= m_ebl_vrms.size()) {
     m_ebl_mode = EblMode::Idle;
     m_edit_item_index = -1;
     return true;
   }
-  RouteEblVrm moved = m_ebl_vrms[static_cast<size_t>(m_edit_item_index)];
-  moved.target_lat = target_lat;
-  moved.target_lon = target_lon;
-  RecalculateEbl(moved);
-  if (moved.range_nm < 0.001) {
-    SetStatus(_("Target is too close to the start point. Click another position or right-click to cancel."));
-    return true;
-  }
-  m_ebl_vrms[static_cast<size_t>(m_edit_item_index)] = moved;
+
+  RouteEblVrm& item = m_ebl_vrms[static_cast<size_t>(m_edit_item_index)];
+  item.target_lat = target_lat;
+  item.target_lon = target_lon;
+  RecalculateEbl(item);
   SavePersistentState();
-  wxString name = moved.target_name;
-  if (name.IsEmpty()) name = _("Sight mark");
-  SetStatus(name + _(" moved — ") + wxString::Format(_("%03.0f°T · %.2f NM"),
-                                                      moved.bearing_true, moved.range_nm));
+  SetStatus(wxString::Format(_("EBL/VRM target moved: %03.0f°T  %.2f NM."),
+                             item.bearing_true, item.range_nm));
   m_ebl_mode = EblMode::Idle;
   m_edit_item_index = -1;
   if (m_parent_window) RequestRefresh(m_parent_window);
@@ -533,96 +636,44 @@ bool route_toolbar_pi::CommitMoveEblTarget(double target_lat, double target_lon)
 void route_toolbar_pi::RenameEblTarget(int index) {
   if (index < 0 || static_cast<size_t>(index) >= m_ebl_vrms.size()) return;
   RouteEblVrm& item = m_ebl_vrms[static_cast<size_t>(index)];
-  wxTextEntryDialog dialog(m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
-                           _("Enter a new sight-mark / target name."),
-                           _("Route EBL / VRM"), item.target_name);
+  wxTextEntryDialog dialog(m_parent_window, _("Sight mark / target name:"),
+                           _("Rename Route EBL/VRM"), item.target_name);
   if (dialog.ShowModal() != wxID_OK) return;
-  wxString entered = dialog.GetValue();
-  entered.Trim(true).Trim(false);
-  if (entered.IsEmpty()) return;
-  item.target_name = entered;
+  wxString name = dialog.GetValue();
+  name.Trim(true).Trim(false);
+  if (!name.IsEmpty()) item.target_name = name;
   SavePersistentState();
-  SetStatus(_("Renamed Route EBL/VRM target to ") + entered + _("."));
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
 void route_toolbar_pi::DeleteEblTarget(int index) {
   if (index < 0 || static_cast<size_t>(index) >= m_ebl_vrms.size()) return;
-  const wxString name = m_ebl_vrms[static_cast<size_t>(index)].target_name;
-  wxMessageDialog confirm(m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
-                          _("Delete Route EBL/VRM target '") + name + _("'?"),
-                          _("Route EBL / VRM"), wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
-  if (confirm.ShowModal() != wxID_YES) return;
   m_ebl_vrms.erase(m_ebl_vrms.begin() + index);
-  m_edit_item_index = -1;
-  m_ebl_mode = EblMode::Idle;
   SavePersistentState();
-  SetStatus(_("Route EBL/VRM target deleted."));
+  SetStatus(_("Route EBL/VRM deleted."));
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
-void route_toolbar_pi::RecalculateEbl(RouteEblVrm& item) const {
-  RefreshEblStartFromMark(item);
-  DistanceBearingMercator_Plugin(item.target_lat, item.target_lon,
-                                 item.start_lat, item.start_lon,
-                                 &item.bearing_true, &item.range_nm);
-  item.bearing_true = NormalizeBearing(item.bearing_true);
-}
-
-void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
-  if (!m_pending_start.found) {
-    m_ebl_mode = EblMode::AwaitRoutePoint;
-    SetStatus(_("EBL/VRM start point was lost. Click a route waypoint or mark again."));
-    return;
+void route_toolbar_pi::ShowEblTargetActions(int index) {
+  if (index < 0 || static_cast<size_t>(index) >= m_ebl_vrms.size()) return;
+  const wxString choices[] = {_("Move target"), _("Rename"), _("Delete")};
+  wxSingleChoiceDialog dialog(m_parent_window,
+                              _("Choose an action for this Route EBL/VRM target."),
+                              _("Route EBL/VRM"), WXSIZEOF(choices), choices);
+  if (dialog.ShowModal() != wxID_OK) return;
+  switch (dialog.GetSelection()) {
+    case 0:
+      BeginMoveEblTarget(index);
+      break;
+    case 1:
+      RenameEblTarget(index);
+      break;
+    case 2:
+      DeleteEblTarget(index);
+      break;
+    default:
+      break;
   }
-  RouteEblVrm item;
-  item.start_lat = m_pending_start.lat;
-  item.start_lon = m_pending_start.lon;
-  item.target_lat = target_lat;
-  item.target_lon = target_lon;
-  item.arc_width_deg = kDefaultArcWidthDeg;
-  item.start_is_mark = m_pending_start.is_mark;
-  if (item.start_is_mark) {
-    item.start_mark_guid = m_pending_start.waypoint_guid;
-    item.start_mark_name = m_pending_start.waypoint_name;
-  } else {
-    item.route_guid = m_pending_start.route_guid;
-    item.route_name = m_pending_start.route_name;
-    item.waypoint_guid = m_pending_start.waypoint_guid;
-    item.waypoint_name = m_pending_start.waypoint_name;
-  }
-  RecalculateEbl(item);
-  if (item.range_nm < 0.001) {
-    SetStatus(_("Target is too close to the start point. Click the sight mark again."));
-    return;
-  }
-  const wxString default_name = wxString::Format(
-      _("Sight mark %lu"), static_cast<unsigned long>(m_ebl_vrms.size() + 1));
-  item.target_name = default_name;
-  m_ebl_mode = EblMode::Idle;
-  m_ebl_vrms.push_back(item);
-  if (m_parent_window) RequestRefresh(m_parent_window);
-  wxTextEntryDialog name_dialog(
-      m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
-      _("Name this sight mark / target. Examples: Rivö fyr, No 28, Gulldisken."),
-      _("Route EBL / VRM"), default_name);
-  if (name_dialog.ShowModal() == wxID_OK) {
-    wxString entered = name_dialog.GetValue();
-    entered.Trim(true).Trim(false);
-    if (!entered.IsEmpty()) {
-      item.target_name = entered;
-      m_ebl_vrms.back().target_name = entered;
-    }
-  }
-  SavePersistentState();
-  wxString start_name = item.start_is_mark ? item.start_mark_name : item.waypoint_name;
-  if (start_name.IsEmpty()) start_name = item.start_is_mark ? _("Mark") : _("Waypoint");
-  SetStatus(start_name + _(" → ") + item.target_name + _("  ") +
-            wxString::Format(_("%03.0f°T  %.2f NM. Saved. Click another route waypoint/mark, click an existing target to edit, or right-click to finish."),
-                             item.bearing_true, item.range_nm));
-  m_pending_start = RouteWaypointHit{};
-  m_ebl_mode = EblMode::AwaitRoutePoint;
-  if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
 void route_toolbar_pi::LoadPersistentState() {
@@ -630,6 +681,7 @@ void route_toolbar_pi::LoadPersistentState() {
   m_pils.clear();
   wxFileConfig* config = GetOCPNConfigObject();
   if (!config) return;
+
   const wxString old_path = config->GetPath();
   config->SetPath(wxString::FromUTF8(kConfigPath));
   long font_size = kDefaultLabelFontSize;
@@ -764,33 +816,15 @@ bool route_toolbar_pi::RenderOverlay(wxDC& dc, PlugIn_ViewPort* vp) {
     preview.target_lat = m_cursor_lat;
     preview.target_lon = m_cursor_lon;
     RecalculateEbl(preview);
-    if (preview.range_nm >= 0.001) {
-      DrawEblVrm(dc, vp, preview, true);
-      rendered = true;
-    }
+    DrawEblVrm(dc, vp, preview, true);
+    rendered = true;
   }
   return rendered;
 }
 
 bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
-  if (!vp || !vp->bValid || vp->pix_width <= 0 || vp->pix_height <= 0) return false;
+  if (!vp || !vp->bValid) return false;
   bool rendered = false;
-  GLint previous_matrix_mode = GL_MODELVIEW;
-  glGetIntegerv(GL_MATRIX_MODE, &previous_matrix_mode);
-  glPushAttrib(GL_ALL_ATTRIB_BITS);
-  glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
-  glMatrixMode(GL_PROJECTION);
-  glPushMatrix();
-  glLoadIdentity();
-  glOrtho(0.0, static_cast<double>(vp->pix_width), static_cast<double>(vp->pix_height), 0.0, -1.0, 1.0);
-  glMatrixMode(GL_MODELVIEW);
-  glPushMatrix();
-  glLoadIdentity();
-  glDisable(GL_DEPTH_TEST);
-  glDisable(GL_CULL_FACE);
-  glEnable(GL_BLEND);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
   for (size_t i = 0; i < m_pils.size(); ++i) {
     if (m_pil_mode == PilMode::AwaitOffsetPoint && m_edit_pil_index >= 0 &&
         static_cast<int>(i) == m_edit_pil_index) continue;
@@ -807,7 +841,9 @@ bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
   for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
     if (m_ebl_mode == EblMode::MoveExistingTarget && static_cast<int>(i) == m_edit_item_index)
       continue;
-    if (m_ebl_vrms[i].start_is_mark) RecalculateEbl(m_ebl_vrms[i]);
+    if (m_ebl_vrms[i].start_is_mark) {
+      if (RefreshEblStartFromMark(m_ebl_vrms[i])) RecalculateEbl(m_ebl_vrms[i]);
+    }
     DrawEblVrmGL(vp, m_ebl_vrms[i], false);
     rendered = true;
   }
@@ -834,249 +870,201 @@ bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
     preview.target_lat = m_cursor_lat;
     preview.target_lon = m_cursor_lon;
     RecalculateEbl(preview);
-    if (preview.range_nm >= 0.001) {
-      DrawEblVrmGL(vp, preview, true);
-      rendered = true;
-    }
+    DrawEblVrmGL(vp, preview, true);
+    rendered = true;
   }
-  glMatrixMode(GL_MODELVIEW);
-  glPopMatrix();
-  glMatrixMode(GL_PROJECTION);
-  glPopMatrix();
-  glMatrixMode(previous_matrix_mode);
-  glPopClientAttrib();
-  glPopAttrib();
   return rendered;
 }
 
 void route_toolbar_pi::DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp,
-                                  const RouteEblVrm& item, bool preview) const {
-  wxPoint start_px, target_px;
+                                   const RouteEblVrm& item, bool preview) const {
+  wxPoint start_px;
+  wxPoint target_px;
   GetCanvasPixLL(vp, &start_px, item.start_lat, item.start_lon);
   GetCanvasPixLL(vp, &target_px, item.target_lat, item.target_lon);
+
   const wxPen old_pen = dc.GetPen();
   const wxBrush old_brush = dc.GetBrush();
-  const wxColour old_text = dc.GetTextForeground();
   const wxFont old_font = dc.GetFont();
-  const wxColour line_colour = preview ? PreviewColour(m_ebl_colour) : m_ebl_colour;
-  dc.SetPen(wxPen(line_colour, preview ? 1 : 2,
-                  preview ? wxPENSTYLE_SHORT_DASH : wxPENSTYLE_SOLID));
+  const wxColour old_text = dc.GetTextForeground();
+
+  const wxColour ebl_colour = preview ? PreviewColour(m_ebl_colour) : m_ebl_colour;
+  dc.SetPen(wxPen(ebl_colour, preview ? 1 : 2));
   dc.SetBrush(*wxTRANSPARENT_BRUSH);
   dc.DrawLine(start_px, target_px);
-  const double half_arc = item.arc_width_deg / 2.0;
+
+  const int ring_radius = preview ? kTargetRingRadiusPx - 1 : kTargetRingRadiusPx;
+  dc.DrawCircle(target_px, ring_radius);
+  dc.DrawLine(target_px.x - kTargetCrosshairRadiusPx, target_px.y,
+              target_px.x + kTargetCrosshairRadiusPx, target_px.y);
+  dc.DrawLine(target_px.x, target_px.y - kTargetCrosshairRadiusPx,
+              target_px.x, target_px.y + kTargetCrosshairRadiusPx);
+
+  const double arc_start_bearing = item.bearing_true + 180.0 - item.arc_width_deg / 2.0;
+  const double arc_end_bearing = item.bearing_true + 180.0 + item.arc_width_deg / 2.0;
   wxPoint previous;
   bool have_previous = false;
   for (int i = 0; i <= kArcSegments; ++i) {
-    const double fraction = static_cast<double>(i) / kArcSegments;
-    const double arc_bearing = NormalizeBearing(item.bearing_true - half_arc + fraction * item.arc_width_deg);
-    double arc_lat = 0.0, arc_lon = 0.0;
-    PositionBearingDistanceMercator_Plugin(item.start_lat, item.start_lon, arc_bearing,
-                                           item.range_nm, &arc_lat, &arc_lon);
-    wxPoint arc_px;
-    GetCanvasPixLL(vp, &arc_px, arc_lat, arc_lon);
-    if (have_previous) dc.DrawLine(previous, arc_px);
-    previous = arc_px;
+    const double bearing = arc_start_bearing +
+                           (arc_end_bearing - arc_start_bearing) * i / kArcSegments;
+    double arc_lat = 0.0;
+    double arc_lon = 0.0;
+    PositionBearingDistanceMercator_Plugin(item.start_lat, item.start_lon,
+                                           NormalizeBearing(bearing), item.range_nm,
+                                           &arc_lat, &arc_lon);
+    wxPoint point;
+    GetCanvasPixLL(vp, &point, arc_lat, arc_lon);
+    if (have_previous) dc.DrawLine(previous, point);
+    previous = point;
     have_previous = true;
   }
-  dc.SetBrush(wxBrush(line_colour));
-  dc.DrawCircle(start_px, preview ? 2 : 3);
-  dc.SetBrush(*wxTRANSPARENT_BRUSH);
-  dc.DrawCircle(target_px, preview ? 5 : kTargetRingRadiusPx);
-  const int cross = preview ? 8 : kTargetCrosshairRadiusPx;
-  dc.DrawLine(target_px.x - cross, target_px.y, target_px.x + cross, target_px.y);
-  dc.DrawLine(target_px.x, target_px.y - cross, target_px.x, target_px.y + cross);
-  const wxString bearing_range = wxString::Format(_("%03.0f°T · %.2f NM"),
-                                                   item.bearing_true, item.range_nm);
-  wxString first_line;
-  if (!preview && !item.target_name.IsEmpty()) first_line = item.target_name;
-  const wxFont font = GetEblLabelFont();
-  dc.SetFont(font);
-  const wxSize first_size = first_line.IsEmpty() ? wxSize(0, 0) : dc.GetTextExtent(first_line);
-  const wxSize second_size = dc.GetTextExtent(bearing_range);
-  const int line_gap = first_line.IsEmpty() ? 0 : 2;
-  const int text_width = std::max(first_size.x, second_size.x);
-  const int text_height = first_size.y + line_gap + second_size.y;
-  const int box_width = text_width + 8;
-  const int box_height = text_height + 6;
-  const wxPoint box_pos = PlaceLabelBoxAwayFromStart(
-      start_px, target_px, box_width, box_height, vp->pix_width, vp->pix_height);
-  const wxPoint text_pos(box_pos.x + 4, box_pos.y + 3);
-  const wxPoint leader_end = ClosestPointOnLabelBox(
-      target_px, box_pos, box_width, box_height);
-  const wxPoint leader_start = PointOnTargetRingTowards(
-      target_px, leader_end, preview ? 5 : kTargetRingRadiusPx);
-  dc.SetPen(wxPen(line_colour, 1, wxPENSTYLE_SOLID));
+
+  const wxString line1 = item.target_name.IsEmpty() ? _("Sight mark") : item.target_name;
+  const wxString line2 = wxString::Format("%03.0f°T · %.2f NM", item.bearing_true,
+                                          item.range_nm);
+  dc.SetFont(GetEblLabelFont());
+  const wxSize e1 = dc.GetTextExtent(line1);
+  const wxSize e2 = dc.GetTextExtent(line2);
+  const int box_w = std::max(e1.x, e2.x) + 10;
+  const int box_h = e1.y + e2.y + 8;
+  const wxPoint box = PlaceLabelBoxAwayFromStart(start_px, target_px, box_w, box_h,
+                                                  vp->pix_width, vp->pix_height);
+  const wxPoint leader_end = ClosestPointOnLabelBox(target_px, box, box_w, box_h);
+  const wxPoint leader_start = PointOnTargetRingTowards(target_px, leader_end, ring_radius);
+
   dc.DrawLine(leader_start, leader_end);
   dc.SetPen(*wxTRANSPARENT_PEN);
-  dc.SetBrush(wxBrush(wxColour(255, 245, 150)));
-  dc.DrawRectangle(box_pos.x, box_pos.y, box_width, box_height);
+  dc.SetBrush(wxBrush(wxColour(255, 245, 145)));
+  dc.DrawRectangle(box.x, box.y, box_w, box_h);
   dc.SetTextForeground(*wxBLACK);
-  int text_y = text_pos.y;
-  if (!first_line.IsEmpty()) {
-    dc.DrawText(first_line, text_pos.x, text_y);
-    text_y += first_size.y + line_gap;
-  }
-  dc.DrawText(bearing_range, text_pos.x, text_y);
+  dc.DrawText(line1, box.x + 5, box.y + 2);
+  dc.DrawText(line2, box.x + 5, box.y + 3 + e1.y);
+
   dc.SetPen(old_pen);
   dc.SetBrush(old_brush);
-  dc.SetTextForeground(old_text);
   dc.SetFont(old_font);
+  dc.SetTextForeground(old_text);
+}
+
+void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
+  const wxFont font = GetEblLabelFont();
+  wxBitmap bitmap(512, 128, 32);
+  if (!bitmap.IsOk()) return;
+  wxMemoryDC memory_dc(bitmap);
+  memory_dc.SetBackground(wxBrush(wxColour(255, 245, 145)));
+  memory_dc.Clear();
+  memory_dc.SetFont(font);
+  memory_dc.SetTextForeground(*wxBLACK);
+  const wxSize text = memory_dc.GetTextExtent(label);
+  const int width = std::min(512, text.x + 10);
+  const int height = std::min(128, text.y + 6);
+  memory_dc.DrawText(label, 5, 3);
+  memory_dc.SelectObject(wxNullBitmap);
+
+  wxImage image = bitmap.ConvertToImage();
+  if (!image.IsOk()) return;
+  if (image.GetWidth() != width || image.GetHeight() != height)
+    image = image.GetSubImage(wxRect(0, 0, width, height));
+  if (!image.HasAlpha()) image.InitAlpha();
+  unsigned char* alpha = image.GetAlpha();
+  const unsigned char* rgb = image.GetData();
+  if (!alpha || !rgb) return;
+  for (int i = 0; i < width * height; ++i) {
+    const int r = rgb[i * 3];
+    const int g = rgb[i * 3 + 1];
+    const int b = rgb[i * 3 + 2];
+    alpha[i] = (r > 248 && g > 238 && b > 130) ? 235 : 255;
+  }
+
+  GLuint texture = 0;
+  glGenTextures(1, &texture);
+  glBindTexture(GL_TEXTURE_2D, texture);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
+               GL_UNSIGNED_BYTE, image.GetData());
+  glDeleteTextures(1, &texture);
 }
 
 void route_toolbar_pi::DrawEblVrmGL(PlugIn_ViewPort* vp,
-                                    const RouteEblVrm& item, bool preview) const {
-  wxPoint start_px, target_px;
+                                     const RouteEblVrm& item,
+                                     bool preview) const {
+  wxPoint start_px;
+  wxPoint target_px;
   GetCanvasPixLL(vp, &start_px, item.start_lat, item.start_lon);
   GetCanvasPixLL(vp, &target_px, item.target_lat, item.target_lon);
-  const wxColour colour = preview ? PreviewColour(m_ebl_colour) : m_ebl_colour;
-  glColor4ub(colour.Red(), colour.Green(), colour.Blue(), preview ? 190 : 255);
+
+  GLint previous_texture = 0;
+  GLint previous_unpack = 4;
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_texture);
+  glGetIntegerv(GL_UNPACK_ALIGNMENT, &previous_unpack);
+  const GLboolean texture_was_enabled = glIsEnabled(GL_TEXTURE_2D);
+
+  const wxColour ebl_colour = preview ? PreviewColour(m_ebl_colour) : m_ebl_colour;
+  glColor4ub(ebl_colour.Red(), ebl_colour.Green(), ebl_colour.Blue(),
+             preview ? 190 : 255);
   glDisable(GL_TEXTURE_2D);
   glLineWidth(preview ? 1.0f : 2.0f);
   glBegin(GL_LINES);
   glVertex2i(start_px.x, start_px.y);
   glVertex2i(target_px.x, target_px.y);
+  glVertex2i(target_px.x - kTargetCrosshairRadiusPx, target_px.y);
+  glVertex2i(target_px.x + kTargetCrosshairRadiusPx, target_px.y);
+  glVertex2i(target_px.x, target_px.y - kTargetCrosshairRadiusPx);
+  glVertex2i(target_px.x, target_px.y + kTargetCrosshairRadiusPx);
   glEnd();
-  const double half_arc = item.arc_width_deg / 2.0;
+
+  const int ring_radius = preview ? kTargetRingRadiusPx - 1 : kTargetRingRadiusPx;
+  glBegin(GL_LINE_LOOP);
+  for (int i = 0; i < 32; ++i) {
+    const double angle = 2.0 * 3.14159265358979323846 * i / 32.0;
+    glVertex2d(target_px.x + std::cos(angle) * ring_radius,
+               target_px.y + std::sin(angle) * ring_radius);
+  }
+  glEnd();
+
+  const double arc_start_bearing = item.bearing_true + 180.0 - item.arc_width_deg / 2.0;
+  const double arc_end_bearing = item.bearing_true + 180.0 + item.arc_width_deg / 2.0;
   glBegin(GL_LINE_STRIP);
   for (int i = 0; i <= kArcSegments; ++i) {
-    const double fraction = static_cast<double>(i) / kArcSegments;
-    const double arc_bearing = NormalizeBearing(item.bearing_true - half_arc + fraction * item.arc_width_deg);
-    double arc_lat = 0.0, arc_lon = 0.0;
-    PositionBearingDistanceMercator_Plugin(item.start_lat, item.start_lon, arc_bearing,
-                                           item.range_nm, &arc_lat, &arc_lon);
-    wxPoint arc_px;
-    GetCanvasPixLL(vp, &arc_px, arc_lat, arc_lon);
-    glVertex2i(arc_px.x, arc_px.y);
+    const double bearing = arc_start_bearing +
+                           (arc_end_bearing - arc_start_bearing) * i / kArcSegments;
+    double arc_lat = 0.0;
+    double arc_lon = 0.0;
+    PositionBearingDistanceMercator_Plugin(item.start_lat, item.start_lon,
+                                           NormalizeBearing(bearing), item.range_nm,
+                                           &arc_lat, &arc_lon);
+    wxPoint point;
+    GetCanvasPixLL(vp, &point, arc_lat, arc_lon);
+    glVertex2i(point.x, point.y);
   }
   glEnd();
-  glPointSize(preview ? 5.0f : 7.0f);
-  glBegin(GL_POINTS);
-  glVertex2i(start_px.x, start_px.y);
-  glEnd();
-  const int ring = preview ? 5 : kTargetRingRadiusPx;
-  glBegin(GL_LINE_LOOP);
-  for (int i = 0; i < 24; ++i) {
-    const double angle = (2.0 * M_PI * i) / 24.0;
-    glVertex2d(target_px.x + std::cos(angle) * ring,
-               target_px.y + std::sin(angle) * ring);
-  }
-  glEnd();
-  const int cross = preview ? 8 : kTargetCrosshairRadiusPx;
-  glBegin(GL_LINES);
-  glVertex2i(target_px.x - cross, target_px.y);
-  glVertex2i(target_px.x + cross, target_px.y);
-  glVertex2i(target_px.x, target_px.y - cross);
-  glVertex2i(target_px.x, target_px.y + cross);
-  glEnd();
-  const wxString bearing_range = wxString::Format(_("%03.0f°T · %.2f NM"),
-                                                   item.bearing_true, item.range_nm);
-  wxString label = bearing_range;
-  if (!preview && !item.target_name.IsEmpty()) label = item.target_name + _("\n") + bearing_range;
 
-  const wxFont font = GetEblLabelFont();
-  const int newline = label.Find('\n');
-  const wxString first_line = newline == wxNOT_FOUND
-                                  ? label
-                                  : label.Left(static_cast<size_t>(newline));
-  const wxString second_line = newline == wxNOT_FOUND
-                                   ? wxString()
-                                   : label.Mid(static_cast<size_t>(newline + 1));
-  wxBitmap measure_bitmap(1, 1, 24);
-  wxMemoryDC measure_dc(measure_bitmap);
-  measure_dc.SetFont(font);
-  const wxSize first_extent = measure_dc.GetTextExtent(first_line);
-  const wxSize second_extent = second_line.IsEmpty()
-                                   ? wxSize(0, 0)
-                                   : measure_dc.GetTextExtent(second_line);
-  measure_dc.SelectObject(wxNullBitmap);
-  const int line_gap = second_line.IsEmpty() ? 0 : 2;
-  const int text_width = std::max(first_extent.x, second_extent.x);
-  const int text_height = first_extent.y + line_gap + second_extent.y;
-  const int box_width = std::max(1, text_width + 8);
-  const int box_height = std::max(1, text_height + 6);
-  const wxPoint box_pos = PlaceLabelBoxAwayFromStart(
-      start_px, target_px, box_width, box_height, vp->pix_width, vp->pix_height);
-  const wxPoint leader_end = ClosestPointOnLabelBox(
-      target_px, box_pos, box_width, box_height);
-  const wxPoint leader_start = PointOnTargetRingTowards(target_px, leader_end, ring);
+  // The OpenGL label renderer is intentionally kept compact here. Placement uses
+  // the same away-from-start heuristic as wxDC rendering, while preserving the
+  // caller's GL texture state.
+  const wxString gl_label = (item.target_name.IsEmpty() ? _("Sight mark") : item.target_name) +
+                            "  " + wxString::Format("%03.0f°T · %.2f NM", item.bearing_true,
+                                                     item.range_nm);
+  const int approx_w = std::clamp(static_cast<int>(gl_label.length()) *
+                                      std::max(6, m_label_font_size / 2),
+                                  60, 500);
+  const int approx_h = std::max(20, m_label_font_size + 10);
+  const wxPoint box = PlaceLabelBoxAwayFromStart(start_px, target_px, approx_w, approx_h,
+                                                  vp->pix_width, vp->pix_height);
+  DrawGlLabel(gl_label, box.x, box.y);
 
-  glColor4ub(colour.Red(), colour.Green(), colour.Blue(), preview ? 190 : 255);
-  glBegin(GL_LINES);
-  glVertex2i(leader_start.x, leader_start.y);
-  glVertex2i(leader_end.x, leader_end.y);
-  glEnd();
-  DrawGlLabel(label, box_pos.x, box_pos.y);
-}
-
-void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
-  if (label.IsEmpty()) return;
-  const wxFont font = GetEblLabelFont();
-  const int newline = label.Find('\n');
-  const wxString first_line = newline == wxNOT_FOUND ? label : label.Left(static_cast<size_t>(newline));
-  const wxString second_line = newline == wxNOT_FOUND ? wxString() : label.Mid(static_cast<size_t>(newline + 1));
-  wxBitmap measure_bitmap(1, 1, 24);
-  wxMemoryDC measure_dc(measure_bitmap);
-  measure_dc.SetFont(font);
-  const wxSize first_extent = measure_dc.GetTextExtent(first_line);
-  const wxSize second_extent = second_line.IsEmpty() ? wxSize(0, 0) : measure_dc.GetTextExtent(second_line);
-  measure_dc.SelectObject(wxNullBitmap);
-  const int line_gap = second_line.IsEmpty() ? 0 : 2;
-  const int text_width = std::max(first_extent.x, second_extent.x);
-  const int text_height = first_extent.y + line_gap + second_extent.y;
-  const int width = std::max(1, text_width + 8);
-  const int height = std::max(1, text_height + 6);
-  wxBitmap bitmap(width, height, 24);
-  wxMemoryDC bitmap_dc(bitmap);
-  bitmap_dc.SetBackground(wxBrush(wxColour(255, 245, 150)));
-  bitmap_dc.Clear();
-  bitmap_dc.SetFont(font);
-  bitmap_dc.SetTextForeground(*wxBLACK);
-  bitmap_dc.DrawText(first_line, 4, 3);
-  if (!second_line.IsEmpty()) bitmap_dc.DrawText(second_line, 4, 3 + first_extent.y + line_gap);
-  bitmap_dc.SelectObject(wxNullBitmap);
-  wxImage image = bitmap.ConvertToImage();
-  if (!image.IsOk() || !image.GetData()) return;
-  GLint previous_texture = 0;
-  GLint previous_unpack_alignment = 4;
-  const GLboolean texture_was_enabled = glIsEnabled(GL_TEXTURE_2D);
-  glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_texture);
-  glGetIntegerv(GL_UNPACK_ALIGNMENT, &previous_unpack_alignment);
-  GLuint texture = 0;
-  glGenTextures(1, &texture);
-  if (!texture) return;
-  glBindTexture(GL_TEXTURE_2D, texture);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.GetWidth(), image.GetHeight(),
-               0, GL_RGB, GL_UNSIGNED_BYTE, image.GetData());
-  glEnable(GL_TEXTURE_2D);
-  glColor4ub(255, 255, 255, 255);
-  glBegin(GL_QUADS);
-  glTexCoord2f(0.0f, 0.0f); glVertex2i(x, y);
-  glTexCoord2f(1.0f, 0.0f); glVertex2i(x + width, y);
-  glTexCoord2f(1.0f, 1.0f); glVertex2i(x + width, y + height);
-  glTexCoord2f(0.0f, 1.0f); glVertex2i(x, y + height);
-  glEnd();
-  glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous_texture));
-  glPixelStorei(GL_UNPACK_ALIGNMENT, previous_unpack_alignment);
-  if (texture_was_enabled) glEnable(GL_TEXTURE_2D); else glDisable(GL_TEXTURE_2D);
-  glDeleteTextures(1, &texture);
+  glBindTexture(GL_TEXTURE_2D, previous_texture);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, previous_unpack);
+  if (texture_was_enabled)
+    glEnable(GL_TEXTURE_2D);
+  else
+    glDisable(GL_TEXTURE_2D);
 }
 
 double route_toolbar_pi::NormalizeBearing(double bearing) {
   bearing = std::fmod(bearing, 360.0);
   if (bearing < 0.0) bearing += 360.0;
   return bearing;
-}
-
-void route_toolbar_pi::SetStatus(const wxString& text) {
-  if (m_dialog) m_dialog->SetStatus(text);
-}
-
-void route_toolbar_pi::OnDialogHidden() {
-  CancelInteractiveTool();
-  m_dialog_visible = false;
 }
