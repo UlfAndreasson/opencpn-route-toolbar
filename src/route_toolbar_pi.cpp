@@ -11,11 +11,11 @@
 #include <wx/dc.h>
 #include <wx/dcmemory.h>
 #include <wx/fileconf.h>
+#include <wx/font.h>
 #include <wx/image.h>
 #include <wx/intl.h>
 #include <wx/msgdlg.h>
 #include <wx/pen.h>
-#include <wx/settings.h>
 #include <wx/textdlg.h>
 
 #ifdef __APPLE__
@@ -39,7 +39,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 2;
-constexpr int kPluginVersionPatch = 5;
+constexpr int kPluginVersionPatch = 6;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kDefaultArcWidthDeg = 30.0;
@@ -53,24 +53,24 @@ constexpr int kMinLabelFontSize = 8;
 constexpr int kMaxLabelFontSize = 30;
 constexpr const char* kConfigPath = "/PlugIns/RouteToolbar";
 
-// Deliberately grayscale: three route waypoints joined by a route line.
+// Grayscale route icon: three small hollow waypoints joined by a thin route.
 static const char* route_toolbar_xpm[] = {
     "16 16 3 1",
     "  c None",
     "D c #4A4A4A",
-    "L c #A0A0A0",
+    "L c #969696",
     "                ",
     "  DDD           ",
-    "  DDD           ",
-    "    LL          ",
-    "     LL         ",
-    "      DDD       ",
-    "      DDD       ",
-    "         LL     ",
-    "          LL    ",
-    "           DDD  ",
-    "           DDD  ",
-    "                ",
+    "  D D           ",
+    "  DDD L         ",
+    "       L        ",
+    "       DDD      ",
+    "       D D      ",
+    "       DDD L    ",
+    "            L   ",
+    "            DDD ",
+    "            D D ",
+    "            DDD ",
     "                ",
     "                ",
     "                ",
@@ -173,9 +173,15 @@ void route_toolbar_pi::SetLabelFontSize(int point_size) {
 }
 
 wxFont route_toolbar_pi::GetEblLabelFont() const {
-  wxFont font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
-  if (!font.IsOk()) font = *wxNORMAL_FONT;
-  font.SetPointSize(m_label_font_size);
+  // Use an independent font object instead of OpenCPN's shared font manager.
+  // This makes the Route Toolbar label-size setting deterministic and keeps it
+  // isolated from ENC/chart text fonts.
+  wxFont font(m_label_font_size, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL,
+              wxFONTWEIGHT_NORMAL, false);
+  if (!font.IsOk()) {
+    font = wxFont(m_label_font_size, wxFONTFAMILY_DEFAULT,
+                  wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL, false);
+  }
   return font;
 }
 
@@ -231,7 +237,6 @@ bool route_toolbar_pi::MouseEventHook(wxMouseEvent& event) {
 
   if (!event.LeftDown() || !m_has_cursor) return false;
 
-  // Existing targets stay editable whenever the Route Toolbar window is open.
   if (m_dialog_visible &&
       (m_ebl_mode == EblMode::Idle ||
        m_ebl_mode == EblMode::AwaitRoutePoint)) {
@@ -484,7 +489,6 @@ void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
       _("Sight mark %lu"), static_cast<unsigned long>(m_ebl_vrms.size() + 1));
   item.target_name = default_name;
 
-  // Freeze the selected geometry before opening the modal naming dialog.
   m_ebl_mode = EblMode::Idle;
   m_ebl_vrms.push_back(item);
   if (m_parent_window) RequestRefresh(m_parent_window);
@@ -667,6 +671,7 @@ bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
   GLint previous_matrix_mode = GL_MODELVIEW;
   glGetIntegerv(GL_MATRIX_MODE, &previous_matrix_mode);
   glPushAttrib(GL_ALL_ATTRIB_BITS);
+  glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
 
   glMatrixMode(GL_PROJECTION);
   glPushMatrix();
@@ -726,6 +731,7 @@ bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
   glMatrixMode(GL_PROJECTION);
   glPopMatrix();
   glMatrixMode(previous_matrix_mode);
+  glPopClientAttrib();
   glPopAttrib();
 
   return rendered;
@@ -870,6 +876,7 @@ void route_toolbar_pi::DrawEblVrmGL(PlugIn_ViewPort* vp,
                target_px.y + std::sin(angle) * ring);
   }
   glEnd();
+
   const int cross = preview ? 8 : kTargetCrosshairRadiusPx;
   glBegin(GL_LINES);
   glVertex2i(target_px.x - cross, target_px.y);
@@ -924,6 +931,7 @@ void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
   const int text_height = first_extent.y + line_gap + second_extent.y;
   const int width = std::max(1, text_width + 8);
   const int height = std::max(1, text_height + 6);
+
   wxBitmap bitmap(width, height, 24);
   wxMemoryDC bitmap_dc(bitmap);
   bitmap_dc.SetBackground(wxBrush(wxColour(255, 245, 150)));
@@ -937,6 +945,12 @@ void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
 
   wxImage image = bitmap.ConvertToImage();
   if (!image.IsOk() || !image.GetData()) return;
+
+  GLint previous_texture = 0;
+  GLint previous_unpack_alignment = 4;
+  const GLboolean texture_was_enabled = glIsEnabled(GL_TEXTURE_2D);
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_texture);
+  glGetIntegerv(GL_UNPACK_ALIGNMENT, &previous_unpack_alignment);
 
   GLuint texture = 0;
   glGenTextures(1, &texture);
@@ -963,9 +977,16 @@ void route_toolbar_pi::DrawGlLabel(const wxString& label, int x, int y) const {
   glTexCoord2f(0.0f, 1.0f);
   glVertex2i(x, y + height);
   glEnd();
-  glDisable(GL_TEXTURE_2D);
 
-  glBindTexture(GL_TEXTURE_2D, 0);
+  // Restore exactly the texture/pixel-store state OpenCPN had before the
+  // plugin drew this label. This avoids contaminating the S52 renderer.
+  glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous_texture));
+  glPixelStorei(GL_UNPACK_ALIGNMENT, previous_unpack_alignment);
+  if (texture_was_enabled)
+    glEnable(GL_TEXTURE_2D);
+  else
+    glDisable(GL_TEXTURE_2D);
+
   glDeleteTextures(1, &texture);
 }
 
