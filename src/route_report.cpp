@@ -68,6 +68,24 @@ struct ReportWaypoint {
 
 void route_toolbar_pi::ExportRouteReport() {
   CancelInteractiveTool();
+  wxWindow* parent = m_dialog ? static_cast<wxWindow*>(m_dialog)
+                              : m_parent_window;
+
+  wxArrayString formats;
+  formats.Add(_("PDF - A4 landscape"));
+  formats.Add(_("CSV - spreadsheet/data"));
+  wxSingleChoiceDialog dialog(
+      parent, _("Choose report format."), _("Route Report"), formats);
+  if (dialog.ShowModal() != wxID_OK) return;
+
+  if (dialog.GetSelection() == 0)
+    ExportRoutePdfReport();
+  else
+    ExportRouteCsvReport();
+}
+
+void route_toolbar_pi::ExportRouteCsvReport() {
+  CancelInteractiveTool();
 
   const wxArrayString route_guids = GetRouteGUIDArray();
   if (route_guids.IsEmpty()) {
@@ -105,7 +123,7 @@ void route_toolbar_pi::ExportRouteReport() {
   wxSingleChoiceDialog route_dialog(
       m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
       _("Select the OpenCPN route to include in the report."),
-      _("Route Report"), choices);
+      _("Route Report - CSV"), choices);
   if (route_dialog.ShowModal() != wxID_OK) {
     SetStatus(_("Route Report cancelled."));
     return;
@@ -160,6 +178,14 @@ void route_toolbar_pi::ExportRouteReport() {
     total_distance_nm += distance;
   }
 
+  std::vector<const RoutePil*> route_pils;
+  for (const RoutePil& pil : m_pils) {
+    const bool same_route =
+        pil.route_guid == route_guid ||
+        (pil.route_guid.IsEmpty() && pil.route_name == route_name);
+    if (same_route) route_pils.push_back(&pil);
+  }
+
   wxString csv;
   csv << CsvField(_("Route Report")) << ";" << CsvField(route_name)
       << "\r\n";
@@ -168,14 +194,14 @@ void route_toolbar_pi::ExportRouteReport() {
   csv << CsvField(_("Route distance (NM)")) << ";"
       << CsvNumber(total_distance_nm, 2) << "\r\n\r\n";
 
-  // Flat, database-friendly layout: one row per sight mark. Waypoint data is
-  // intentionally repeated when a waypoint has more than one EBL/VRM.
   csv << CsvField(_("WP")) << ";"
       << CsvField(_("Waypoint")) << ";"
       << CsvField(_("Latitude")) << ";"
       << CsvField(_("Longitude")) << ";"
       << CsvField(_("Course to next (°T)")) << ";"
       << CsvField(_("Distance to next (NM)")) << ";"
+      << CsvField(_("PIL side")) << ";"
+      << CsvField(_("PIL offset (NM)")) << ";"
       << CsvField(_("Sight mark")) << ";"
       << CsvField(_("EBL bearing (°T)")) << ";"
       << CsvField(_("EBL range (NM)")) << ";"
@@ -204,6 +230,18 @@ void route_toolbar_pi::ExportRouteReport() {
       if (same_waypoint) matches.push_back(&ebl);
     }
 
+    wxString pil_side;
+    wxString pil_offset;
+    for (const RoutePil* pil : route_pils) {
+      if (pil->leg_index != static_cast<int>(i + 1)) continue;
+      if (!pil_side.IsEmpty()) {
+        pil_side += " / ";
+        pil_offset += " / ";
+      }
+      pil_side += pil->offset_nm >= 0.0 ? _("Stbd") : _("Port");
+      pil_offset += CsvNumber(std::fabs(pil->offset_nm), 2);
+    }
+
     const auto append_base_columns = [&]() {
       csv << (i + 1) << ";"
           << CsvField(wp.name) << ";"
@@ -215,7 +253,9 @@ void route_toolbar_pi::ExportRouteReport() {
       csv << ";";
       if (std::isfinite(wp.distance_to_next))
         csv << CsvNumber(wp.distance_to_next, 2);
-      csv << ";";
+      csv << ";"
+          << CsvField(pil_side) << ";"
+          << CsvField(pil_offset) << ";";
     };
 
     if (matches.empty()) {
@@ -235,41 +275,6 @@ void route_toolbar_pi::ExportRouteReport() {
     }
   }
 
-  size_t exported_pils = 0;
-  std::vector<const RoutePil*> route_pils;
-  for (const RoutePil& pil : m_pils) {
-    const bool same_route =
-        pil.route_guid == route_guid ||
-        (pil.route_guid.IsEmpty() && pil.route_name == route_name);
-    if (same_route) route_pils.push_back(&pil);
-  }
-
-  if (!route_pils.empty()) {
-    csv << "\r\n" << CsvField(_("Parallel Index Lines")) << "\r\n";
-    csv << CsvField(_("Leg")) << ";"
-        << CsvField(_("From WP")) << ";"
-        << CsvField(_("To WP")) << ";"
-        << CsvField(_("Course (°T)")) << ";"
-        << CsvField(_("Leg distance (NM)")) << ";"
-        << CsvField(_("Side")) << ";"
-        << CsvField(_("Offset (NM)")) << ";"
-        << CsvField(_("Reference latitude")) << ";"
-        << CsvField(_("Reference longitude")) << "\r\n";
-
-    for (const RoutePil* pil : route_pils) {
-      csv << pil->leg_index << ";"
-          << CsvField(pil->from_name) << ";"
-          << CsvField(pil->to_name) << ";"
-          << wxString::Format("%03.0f", pil->course_true) << ";"
-          << CsvNumber(pil->leg_distance_nm, 2) << ";"
-          << CsvField(pil->offset_nm >= 0.0 ? _("Stbd") : _("Port")) << ";"
-          << CsvNumber(std::fabs(pil->offset_nm), 2) << ";"
-          << CsvField(FormatCoordinate(pil->anchor_lat, true)) << ";"
-          << CsvField(FormatCoordinate(pil->anchor_lon, false)) << "\r\n";
-      ++exported_pils;
-    }
-  }
-
   csv << "\r\n";
   csv << CsvField(_("Summary")) << ";"
       << CsvField(wxString::Format(_("%lu waypoints"),
@@ -279,7 +284,7 @@ void route_toolbar_pi::ExportRouteReport() {
                                    static_cast<unsigned long>(exported_ebls)))
       << ";"
       << CsvField(wxString::Format(_("%lu PIL"),
-                                   static_cast<unsigned long>(exported_pils)))
+                                   static_cast<unsigned long>(route_pils.size())))
       << ";"
       << CsvField(_("Total distance")) << ";"
       << CsvNumber(total_distance_nm, 2) << " NM\r\n";
@@ -287,7 +292,7 @@ void route_toolbar_pi::ExportRouteReport() {
   const wxString default_name = SafeFilename(route_name) + "-route-report.csv";
   wxFileDialog save_dialog(
       m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
-      _("Save Route Report"), wxEmptyString, default_name,
+      _("Save Route Report CSV"), wxEmptyString, default_name,
       _("CSV files (*.csv)|*.csv"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
   if (save_dialog.ShowModal() != wxID_OK) {
     SetStatus(_("Route Report cancelled."));
@@ -309,14 +314,14 @@ void route_toolbar_pi::ExportRouteReport() {
   output.Close();
 
   SetStatus(wxString::Format(
-      _("Route Report saved: %lu WP, %lu EBL/VRM, %lu PIL, %.2f NM."),
+      _("CSV Route Report saved: %lu WP, %lu EBL/VRM, %lu PIL, %.2f NM."),
       static_cast<unsigned long>(waypoints.size()),
       static_cast<unsigned long>(exported_ebls),
-      static_cast<unsigned long>(exported_pils), total_distance_nm));
+      static_cast<unsigned long>(route_pils.size()), total_distance_nm));
 
   wxMessageDialog open_dialog(
       m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
-      _("The Route Report has been saved. Open it now?"),
+      _("The CSV Route Report has been saved. Open it now?"),
       _("Route Report"), wxYES_NO | wxYES_DEFAULT | wxICON_INFORMATION);
   if (open_dialog.ShowModal() == wxID_YES)
     wxLaunchDefaultApplication(save_dialog.GetPath());
