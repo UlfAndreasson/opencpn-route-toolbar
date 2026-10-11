@@ -5,12 +5,14 @@
 
 class wxSpinCtrl;
 class wxStaticText;
+class wxToggleButton;
 class route_toolbar_pi;
 
 class RouteToolbarDialog final : public wxDialog {
 public:
   RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugin);
   void SetStatus(const wxString& text);
+  void SetToolButtons(bool ebl_active, bool pil_active);
 
 private:
   void OnEblVrm(wxCommandEvent& event);
@@ -21,6 +23,8 @@ private:
   void OnClose(wxCloseEvent& event);
 
   route_toolbar_pi* m_plugin{nullptr};
+  wxToggleButton* m_ebl_button{nullptr};
+  wxToggleButton* m_pil_button{nullptr};
   wxSpinCtrl* m_label_size{nullptr};
   wxStaticText* m_status{nullptr};
 };
