@@ -29,8 +29,6 @@ wxString CsvField(wxString value) {
 wxString CsvNumber(double value, int decimals) {
   if (!std::isfinite(value)) return wxEmptyString;
   wxString text = wxString::Format("%.*f", decimals, value);
-  // Semicolon-delimited CSV + decimal comma opens cleanly as numbers in
-  // Swedish/European Excel while remaining human-readable elsewhere.
   text.Replace(".", ",");
   return text;
 }
@@ -154,7 +152,6 @@ void route_toolbar_pi::ExportRouteReport() {
   for (size_t i = 0; i + 1 < waypoints.size(); ++i) {
     double bearing = 0.0;
     double distance = 0.0;
-    // OpenCPN's legacy API takes destination first, then origin.
     DistanceBearingMercator_Plugin(
         waypoints[i + 1].lat, waypoints[i + 1].lon,
         waypoints[i].lat, waypoints[i].lon, &bearing, &distance);
@@ -164,7 +161,6 @@ void route_toolbar_pi::ExportRouteReport() {
   }
 
   wxString csv;
-  csv << "sep=;\r\n";
   csv << CsvField(_("Route Report")) << ";" << CsvField(route_name)
       << "\r\n";
   csv << CsvField(_("Generated")) << ";"
@@ -172,6 +168,8 @@ void route_toolbar_pi::ExportRouteReport() {
   csv << CsvField(_("Route distance (NM)")) << ";"
       << CsvNumber(total_distance_nm, 2) << "\r\n\r\n";
 
+  // Flat, database-friendly layout: one row per sight mark. Waypoint data is
+  // intentionally repeated when a waypoint has more than one EBL/VRM.
   csv << CsvField(_("WP")) << ";"
       << CsvField(_("Waypoint")) << ";"
       << CsvField(_("Latitude")) << ";"
@@ -179,10 +177,10 @@ void route_toolbar_pi::ExportRouteReport() {
       << CsvField(_("Course to next (°T)")) << ";"
       << CsvField(_("Distance to next (NM)")) << ";"
       << CsvField(_("Sight mark")) << ";"
-      << CsvField(_("Sight mark latitude")) << ";"
-      << CsvField(_("Sight mark longitude")) << ";"
       << CsvField(_("EBL bearing (°T)")) << ";"
-      << CsvField(_("EBL range (NM)")) << "\r\n";
+      << CsvField(_("EBL range (NM)")) << ";"
+      << CsvField(_("Sight mark latitude")) << ";"
+      << CsvField(_("Sight mark longitude")) << "\r\n";
 
   size_t exported_ebls = 0;
   for (size_t i = 0; i < waypoints.size(); ++i) {
@@ -229,11 +227,46 @@ void route_toolbar_pi::ExportRouteReport() {
     for (const RouteEblVrm* ebl : matches) {
       append_base_columns();
       csv << CsvField(ebl->target_name) << ";"
-          << CsvField(FormatCoordinate(ebl->target_lat, true)) << ";"
-          << CsvField(FormatCoordinate(ebl->target_lon, false)) << ";"
           << wxString::Format("%03.0f", ebl->bearing_true) << ";"
-          << CsvNumber(ebl->range_nm, 2) << "\r\n";
+          << CsvNumber(ebl->range_nm, 2) << ";"
+          << CsvField(FormatCoordinate(ebl->target_lat, true)) << ";"
+          << CsvField(FormatCoordinate(ebl->target_lon, false)) << "\r\n";
       ++exported_ebls;
+    }
+  }
+
+  size_t exported_pils = 0;
+  std::vector<const RoutePil*> route_pils;
+  for (const RoutePil& pil : m_pils) {
+    const bool same_route =
+        pil.route_guid == route_guid ||
+        (pil.route_guid.IsEmpty() && pil.route_name == route_name);
+    if (same_route) route_pils.push_back(&pil);
+  }
+
+  if (!route_pils.empty()) {
+    csv << "\r\n" << CsvField(_("Parallel Index Lines")) << "\r\n";
+    csv << CsvField(_("Leg")) << ";"
+        << CsvField(_("From WP")) << ";"
+        << CsvField(_("To WP")) << ";"
+        << CsvField(_("Course (°T)")) << ";"
+        << CsvField(_("Leg distance (NM)")) << ";"
+        << CsvField(_("Side")) << ";"
+        << CsvField(_("Offset (NM)")) << ";"
+        << CsvField(_("Reference latitude")) << ";"
+        << CsvField(_("Reference longitude")) << "\r\n";
+
+    for (const RoutePil* pil : route_pils) {
+      csv << pil->leg_index << ";"
+          << CsvField(pil->from_name) << ";"
+          << CsvField(pil->to_name) << ";"
+          << wxString::Format("%03.0f", pil->course_true) << ";"
+          << CsvNumber(pil->leg_distance_nm, 2) << ";"
+          << CsvField(pil->offset_nm >= 0.0 ? _("Stbd") : _("Port")) << ";"
+          << CsvNumber(std::fabs(pil->offset_nm), 2) << ";"
+          << CsvField(FormatCoordinate(pil->anchor_lat, true)) << ";"
+          << CsvField(FormatCoordinate(pil->anchor_lon, false)) << "\r\n";
+      ++exported_pils;
     }
   }
 
@@ -244,6 +277,9 @@ void route_toolbar_pi::ExportRouteReport() {
       << ";"
       << CsvField(wxString::Format(_("%lu EBL/VRM sight marks"),
                                    static_cast<unsigned long>(exported_ebls)))
+      << ";"
+      << CsvField(wxString::Format(_("%lu PIL"),
+                                   static_cast<unsigned long>(exported_pils)))
       << ";"
       << CsvField(_("Total distance")) << ";"
       << CsvNumber(total_distance_nm, 2) << " NM\r\n";
@@ -273,9 +309,10 @@ void route_toolbar_pi::ExportRouteReport() {
   output.Close();
 
   SetStatus(wxString::Format(
-      _("Route Report saved: %lu WP, %lu EBL/VRM, %.2f NM."),
+      _("Route Report saved: %lu WP, %lu EBL/VRM, %lu PIL, %.2f NM."),
       static_cast<unsigned long>(waypoints.size()),
-      static_cast<unsigned long>(exported_ebls), total_distance_nm));
+      static_cast<unsigned long>(exported_ebls),
+      static_cast<unsigned long>(exported_pils), total_distance_nm));
 
   wxMessageDialog open_dialog(
       m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
