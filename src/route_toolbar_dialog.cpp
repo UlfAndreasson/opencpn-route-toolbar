@@ -89,22 +89,31 @@ void RouteToolbarDialog::SetToolButtons(bool ebl_active, bool pil_active) {
 
 void RouteToolbarDialog::OnEblVrm(wxCommandEvent& event) {
   if (!m_plugin) return;
-  if (event.IsChecked())
+  if (event.IsChecked()) {
+    SetToolButtons(true, false);
     m_plugin->BeginEblVrm();
-  else
+  } else {
+    SetToolButtons(false, false);
     m_plugin->CancelInteractiveTool();
+  }
 }
 
 void RouteToolbarDialog::OnPil(wxCommandEvent& event) {
   if (!m_plugin) return;
-  if (event.IsChecked())
+  if (event.IsChecked()) {
+    SetToolButtons(false, true);
     m_plugin->BeginPil();
-  else
+  } else {
+    SetToolButtons(false, false);
     m_plugin->CancelInteractiveTool();
+  }
 }
 
 void RouteToolbarDialog::OnReport(wxCommandEvent&) {
-  if (m_plugin) m_plugin->ExportRoutePdfReport();
+  if (!m_plugin) return;
+  SetToolButtons(false, false);
+  m_plugin->CancelInteractiveTool();
+  m_plugin->ExportRoutePdfReport();
 }
 
 void RouteToolbarDialog::OnLabelSize(wxSpinEvent& event) {
