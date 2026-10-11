@@ -18,20 +18,24 @@
 #include <wx/utils.h>
 
 namespace {
-constexpr double kPageW = 842.0;   // A4 landscape, PDF points
+constexpr double kPageW = 842.0;
 constexpr double kPageH = 595.0;
 constexpr double kMargin = 24.0;
 constexpr double kBottom = 558.0;
 constexpr double kRowH = 18.0;
 constexpr double kHeadH = 22.0;
 
-// Exactly 794 pt wide: 842 pt A4 landscape minus 24 pt margins on each side.
 const std::vector<double> kWidths = {26, 58, 80, 84, 46, 46, 46,
                                      50, 88, 45, 48, 84, 93};
 const std::vector<wxString> kHeaders = {
     "WP", "Waypoint", "Latitude", "Longitude", "Course °T", "Dist NM",
     "PIL side", "PIL NM", "Sight mark", "EBL °T", "Range NM",
     "Sight lat", "Sight lon"};
+
+const std::vector<double> kMarkWidths = {96, 102, 108, 122, 66, 70, 108, 122};
+const std::vector<wxString> kMarkHeaders = {
+    "Start mark", "Start lat", "Start lon", "Sight mark",
+    "EBL °T", "Range NM", "Sight lat", "Sight lon"};
 
 struct SightRow {
   wxString name;
@@ -51,6 +55,17 @@ struct WaypointRow {
   wxString pil_side;
   wxString pil_offset;
   std::vector<SightRow> sights;
+};
+
+struct MarkEblRow {
+  wxString start_name;
+  double start_lat{0.0};
+  double start_lon{0.0};
+  wxString sight_name;
+  double bearing{0.0};
+  double range_nm{0.0};
+  double sight_lat{0.0};
+  double sight_lon{0.0};
 };
 
 wxString Coord(double value, bool latitude) {
@@ -174,6 +189,15 @@ void TableHeader(Canvas& c, double y) {
   }
 }
 
+void MarkTableHeader(Canvas& c, double y) {
+  double x = kMargin;
+  for (size_t i = 0; i < kMarkWidths.size(); ++i) {
+    c.Rect(x, y, kMarkWidths[i], kHeadH, 0.90);
+    c.Text(x + 3, y + 6, Fit(kMarkHeaders[i], kMarkWidths[i]), 7.0, true);
+    x += kMarkWidths[i];
+  }
+}
+
 void PageHeader(Canvas& c, const wxString& route, double total,
                 bool continued) {
   c.Text(kMargin, 20,
@@ -187,6 +211,14 @@ void PageHeader(Canvas& c, const wxString& route, double total,
            true);
   }
   TableHeader(c, continued ? 50.0 : 62.0);
+}
+
+void MarkPageHeader(Canvas& c, const wxString& route, bool continued) {
+  c.Text(kMargin, 20,
+         continued ? "EBL/VRM from Marks - " + route + " (continued)"
+                   : "EBL/VRM from Marks - " + route,
+         14.0, true);
+  MarkTableHeader(c, 50.0);
 }
 }  // namespace
 
@@ -255,9 +287,10 @@ void route_toolbar_pi::ExportRoutePdfReport() {
     total += distance;
   }
 
-  size_t sight_count = 0;
+  size_t route_sight_count = 0;
   for (WaypointRow& wp : rows) {
     for (const RouteEblVrm& ebl : m_ebl_vrms) {
+      if (ebl.start_is_mark) continue;
       const bool same_route = ebl.route_guid == route_guid ||
           (ebl.route_guid.IsEmpty() && ebl.route_name == route_name);
       if (!same_route) continue;
@@ -271,8 +304,20 @@ void route_toolbar_pi::ExportRoutePdfReport() {
       if (!same_wp) continue;
       wp.sights.push_back({ebl.target_name, ebl.bearing_true, ebl.range_nm,
                            ebl.target_lat, ebl.target_lon});
-      ++sight_count;
+      ++route_sight_count;
     }
+  }
+
+  std::vector<MarkEblRow> mark_rows;
+  for (const RouteEblVrm& stored : m_ebl_vrms) {
+    if (!stored.start_is_mark) continue;
+    RouteEblVrm ebl = stored;
+    RecalculateEbl(ebl);
+    wxString start_name = ebl.start_mark_name;
+    if (start_name.IsEmpty()) start_name = _("Mark");
+    mark_rows.push_back({start_name, ebl.start_lat, ebl.start_lon,
+                         ebl.target_name, ebl.bearing_true, ebl.range_nm,
+                         ebl.target_lat, ebl.target_lon});
   }
 
   size_t pil_count = 0;
@@ -350,19 +395,65 @@ void route_toolbar_pi::ExportRoutePdfReport() {
     y += h;
   }
 
-  if (y + 26.0 > kBottom) {
+  const size_t total_sights = route_sight_count + mark_rows.size();
+  if (mark_rows.empty()) {
+    if (y + 28.0 > kBottom) {
+      finish_page();
+      page.Text(kMargin, 28, "Route Report - " + route_name, 14.0, true);
+      y = 54.0;
+    } else {
+      y += 18.0;
+    }
+    page.Text(kMargin, y,
+              wxString::Format("Summary: %lu waypoints, %lu EBL/VRM sight marks, %lu PIL, %.2f NM total",
+                               static_cast<unsigned long>(rows.size()),
+                               static_cast<unsigned long>(total_sights),
+                               static_cast<unsigned long>(pil_count), total),
+              8.0, true);
     finish_page();
-    y = 32.0;
   } else {
-    y += 18.0;
+    finish_page();
+    MarkPageHeader(page, route_name, false);
+    y = 50.0 + kHeadH;
+
+    for (size_t i = 0; i < mark_rows.size(); ++i) {
+      if (y + kRowH > kBottom) {
+        finish_page();
+        MarkPageHeader(page, route_name, true);
+        y = 50.0 + kHeadH;
+      }
+      const MarkEblRow& row = mark_rows[i];
+      const double fill = (i % 2 == 0) ? 0.985 : 0.955;
+      const std::vector<wxString> vals = {
+          row.start_name, Coord(row.start_lat, true), Coord(row.start_lon, false),
+          row.sight_name, wxString::Format("%03.0f", row.bearing),
+          wxString::Format("%.2f", row.range_nm), Coord(row.sight_lat, true),
+          Coord(row.sight_lon, false)};
+      double x = kMargin;
+      for (size_t c = 0; c < kMarkWidths.size(); ++c) {
+        page.Rect(x, y, kMarkWidths[c], kRowH, fill);
+        page.Text(x + 3, y + 6, Fit(vals[c], kMarkWidths[c]), 7.0);
+        x += kMarkWidths[c];
+      }
+      y += kRowH;
+    }
+
+    if (y + 28.0 > kBottom) {
+      finish_page();
+      page.Text(kMargin, 28, "Route Report - " + route_name, 14.0, true);
+      y = 54.0;
+    } else {
+      y += 18.0;
+    }
+    page.Text(kMargin, y,
+              wxString::Format("Summary: %lu waypoints, %lu EBL/VRM sight marks (%lu from marks), %lu PIL, %.2f NM total",
+                               static_cast<unsigned long>(rows.size()),
+                               static_cast<unsigned long>(total_sights),
+                               static_cast<unsigned long>(mark_rows.size()),
+                               static_cast<unsigned long>(pil_count), total),
+              8.0, true);
+    finish_page();
   }
-  page.Text(kMargin, y,
-            wxString::Format("Summary: %lu waypoints, %lu EBL/VRM sight marks, %lu PIL, %.2f NM total",
-                             static_cast<unsigned long>(rows.size()),
-                             static_cast<unsigned long>(sight_count),
-                             static_cast<unsigned long>(pil_count), total),
-            8.0, true);
-  finish_page();
 
   const wxString default_name = SafeName(route_name) + "-route-report.pdf";
   wxFileDialog save(parent, _("Save Route Report PDF"), wxEmptyString,
