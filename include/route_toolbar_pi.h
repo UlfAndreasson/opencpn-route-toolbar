@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <wx/bitmap.h>
+#include <wx/font.h>
 #include <wx/window.h>
 
 #include "ocpn_plugin.h"
@@ -40,6 +41,9 @@ public:
   void BeginEblVrm();
   void CancelInteractiveTool();
   void OnDialogHidden();
+
+  int GetLabelFontSize() const { return m_label_font_size; }
+  void SetLabelFontSize(int point_size);
 
 private:
   struct RouteWaypointHit {
@@ -89,6 +93,11 @@ private:
   void DeleteEblTarget(int index);
   void RecalculateEbl(RouteEblVrm& item) const;
   void CompleteEblVrm(double target_lat, double target_lon);
+
+  void LoadPersistentState();
+  void SavePersistentState() const;
+  wxFont GetEblLabelFont() const;
+
   void DrawEblVrm(wxDC& dc, PlugIn_ViewPort* vp, const RouteEblVrm& item,
                   bool preview) const;
   void DrawEblVrmGL(PlugIn_ViewPort* vp, const RouteEblVrm& item,
@@ -106,6 +115,7 @@ private:
   RouteWaypointHit m_pending_start;
   std::vector<RouteEblVrm> m_ebl_vrms;
   int m_edit_item_index{-1};
+  int m_label_font_size{14};
   double m_cursor_lat{0.0};
   double m_cursor_lon{0.0};
   bool m_has_cursor{false};
