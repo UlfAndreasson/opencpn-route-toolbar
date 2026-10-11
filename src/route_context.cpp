@@ -8,8 +8,12 @@
 #include <limits>
 
 #include <wx/choicdlg.h>
+#include <wx/ffile.h>
+#include <wx/filefn.h>
+#include <wx/filename.h>
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
+#include <wx/stdpaths.h>
 #include <wx/textdlg.h>
 
 namespace {
@@ -34,9 +38,38 @@ double DistancePointToSegmentNm(const XY& p, const XY& a, const XY& b) {
                               0.0, 1.0);
   return std::hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
+
+wxString WriteInvertedToolbarSvg() {
+  const wxString base = wxStandardPaths::Get().GetUserDataDir();
+  const wxString dir = base + wxFILE_SEP_PATH + "route_toolbar_pi";
+  if (!wxFileName::DirExists(dir) &&
+      !wxFileName::Mkdir(dir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
+    return wxEmptyString;
+
+  const wxString path = dir + wxFILE_SEP_PATH + "route-toolbar-inverted.svg";
+  static const char* svg = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <rect x="2" y="2" width="28" height="28" rx="5" fill="#55585b" stroke="#ffffff" stroke-width="1.8"/>
+  <path d="M6 8 L15.5 19 L26 10" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="6" cy="8" r="3.2" fill="#55585b" stroke="#ffffff" stroke-width="2.2"/>
+  <circle cx="15.5" cy="19" r="3.2" fill="#55585b" stroke="#ffffff" stroke-width="2.2"/>
+  <circle cx="26" cy="10" r="3.2" fill="#55585b" stroke="#ffffff" stroke-width="2.2"/>
+</svg>)SVG";
+
+  wxFFile file(path, "wb");
+  if (!file.IsOpened()) return wxEmptyString;
+  file.Write(svg, wxConvUTF8);
+  file.Close();
+  return path;
+}
 }  // namespace
 
 void route_toolbar_pi::EnsureContextMenu() {
+  // Refresh the toolbar bitmap once the Route Toolbar window is first opened.
+  // This gives the icon an inverted dark face with a clear white frame.
+  const wxString icon_path = WriteInvertedToolbarSvg();
+  if (!icon_path.IsEmpty() && m_toolbar_id >= 0)
+    SetToolbarToolBitmapsSVG(m_toolbar_id, icon_path, icon_path, icon_path);
+
   if (m_context_ebl_id >= 0 || m_context_pil_id >= 0) return;
 
   m_context_menu_owner = new wxMenu(_("Route Toolbar"));
@@ -51,8 +84,6 @@ void route_toolbar_pi::EnsureContextMenu() {
       _("Edit the nearest Route Toolbar PIL"), wxITEM_NORMAL);
   m_context_pil_id = AddCanvasContextMenuItem(m_context_pil_item, this);
 
-  // Keep both entries available. The callback resolves the object nearest
-  // the right-click position and gives a clear message if there is no hit.
   SetCanvasContextMenuItemViz(m_context_ebl_id, true);
   SetCanvasContextMenuItemViz(m_context_pil_id, true);
 }
@@ -77,8 +108,7 @@ int route_toolbar_pi::FindNearestPil(double lat, double lon,
 }
 
 void route_toolbar_pi::UpdateContextMenuHit() {
-  // Kept for compatibility with older builds. Menu entries intentionally stay
-  // visible; object proximity is checked when the selected command runs.
+  // Menu entries intentionally stay visible; proximity is checked on command.
 }
 
 void route_toolbar_pi::OnContextMenuItemCallback(int id) {
