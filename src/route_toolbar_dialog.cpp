@@ -22,8 +22,7 @@ enum : int {
 
 RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugin)
     : wxDialog(parent, wxID_ANY, _("Route Toolbar"), wxDefaultPosition,
-               wxDefaultSize,
-               wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER | wxFRAME_FLOAT_ON_PARENT),
+               wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
       m_plugin(plugin) {
   if (m_plugin) m_plugin->EnsureContextMenu();
 
