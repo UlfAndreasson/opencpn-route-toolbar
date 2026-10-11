@@ -37,14 +37,22 @@ double DistancePointToSegmentNm(const XY& p, const XY& a, const XY& b) {
 }  // namespace
 
 void route_toolbar_pi::EnsureContextMenu() {
-  if (m_context_edit_id >= 0) return;
+  if (m_context_ebl_id >= 0 || m_context_pil_id >= 0) return;
 
   m_context_menu_owner = new wxMenu(_("Route Toolbar"));
-  m_context_edit_item = new wxMenuItem(
-      m_context_menu_owner, wxID_ANY, _("Route Toolbar: Edit object..."),
-      _("Edit the nearest Route Toolbar EBL/VRM or PIL"), wxITEM_NORMAL);
-  m_context_edit_id = AddCanvasContextMenuItem(m_context_edit_item, this);
-  SetCanvasContextMenuItemViz(m_context_edit_id, true);
+
+  m_context_ebl_item = new wxMenuItem(
+      m_context_menu_owner, wxID_ANY, _("Route Toolbar: Edit EBL/VRM..."),
+      _("Edit the nearest Route Toolbar EBL/VRM"), wxITEM_NORMAL);
+  m_context_ebl_id = AddCanvasContextMenuItem(m_context_ebl_item, this);
+
+  m_context_pil_item = new wxMenuItem(
+      m_context_menu_owner, wxID_ANY, _("Route Toolbar: Edit PIL..."),
+      _("Edit the nearest Route Toolbar PIL"), wxITEM_NORMAL);
+  m_context_pil_id = AddCanvasContextMenuItem(m_context_pil_item, this);
+
+  SetCanvasContextMenuItemViz(m_context_ebl_id, false);
+  SetCanvasContextMenuItemViz(m_context_pil_id, false);
 }
 
 int route_toolbar_pi::FindNearestPil(double lat, double lon,
@@ -66,27 +74,31 @@ int route_toolbar_pi::FindNearestPil(double lat, double lon,
   return best;
 }
 
+void route_toolbar_pi::UpdateContextMenuHit() {
+  if (m_context_ebl_id < 0 || m_context_pil_id < 0 || !m_has_cursor) return;
+
+  const bool ebl_hit =
+      FindNearestEblTarget(m_cursor_lat, m_cursor_lon, 0.04) >= 0;
+  const bool pil_hit = FindNearestPil(m_cursor_lat, m_cursor_lon, 0.05) >= 0;
+
+  SetCanvasContextMenuItemViz(m_context_ebl_id, ebl_hit);
+  SetCanvasContextMenuItemViz(m_context_pil_id, pil_hit);
+}
+
 void route_toolbar_pi::OnContextMenuItemCallback(int id) {
-  if (id != m_context_edit_id || !m_has_cursor) return;
-  wxWindow* parent = m_dialog ? static_cast<wxWindow*>(m_dialog)
-                              : m_parent_window;
+  if (!m_has_cursor) return;
 
-  const int ebl = FindNearestEblTarget(m_cursor_lat, m_cursor_lon, 0.04);
-  if (ebl >= 0) {
-    ShowEblTargetActions(ebl);
+  if (id == m_context_ebl_id) {
+    const int ebl = FindNearestEblTarget(m_cursor_lat, m_cursor_lon, 0.04);
+    if (ebl >= 0) ShowEblTargetActions(ebl);
     return;
   }
 
-  const int pil = FindNearestPil(m_cursor_lat, m_cursor_lon, 0.05);
-  if (pil >= 0) {
-    ShowPilActions(pil);
+  if (id == m_context_pil_id) {
+    const int pil = FindNearestPil(m_cursor_lat, m_cursor_lon, 0.05);
+    if (pil >= 0) ShowPilActions(pil);
     return;
   }
-
-  wxMessageBox(
-      _("No Route Toolbar object was found close to the right-click position. "
-        "Right-click closer to an EBL/VRM target marker or a PIL line."),
-      _("Route Toolbar"), wxOK | wxICON_INFORMATION, parent);
 }
 
 void route_toolbar_pi::ShowPilActions(int index) {
@@ -95,6 +107,7 @@ void route_toolbar_pi::ShowPilActions(int index) {
                               : m_parent_window;
 
   wxArrayString choices;
+  choices.Add(_("Move graphically"));
   choices.Add(_("Change offset"));
   choices.Add(_("Delete PIL"));
 
@@ -106,7 +119,12 @@ void route_toolbar_pi::ShowPilActions(int index) {
       _("Route PIL"), choices);
   if (action.ShowModal() != wxID_OK) return;
 
-  if (action.GetSelection() == 1) {
+  if (action.GetSelection() == 0) {
+    BeginMovePilAnchor(index);
+    return;
+  }
+
+  if (action.GetSelection() == 2) {
     DeletePil(index);
     return;
   }
