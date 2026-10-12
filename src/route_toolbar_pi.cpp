@@ -48,7 +48,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 5;
-constexpr int kPluginVersionPatch = 6;
+constexpr int kPluginVersionPatch = 7;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kTurnAnchorPickRadiusNm = 0.025;
@@ -104,7 +104,7 @@ wxString EnsureToolbarSvg() {
   <!-- route line -->
   <path d="M8.3 9.2 L15.8 20.0 L23.6 11.3"
         fill="none"
-        stroke="#c7ccd1"
+        stroke="#aeb4ba"
         stroke-width="1.5"
         stroke-linecap="round"
         stroke-linejoin="round"/>
@@ -112,17 +112,17 @@ wxString EnsureToolbarSvg() {
   <!-- waypoints -->
   <circle cx="8.3" cy="9.2" r="2.35"
           fill="none"
-          stroke="#c7ccd1"
+          stroke="#aeb4ba"
           stroke-width="1.35"/>
 
   <circle cx="15.8" cy="20.0" r="2.35"
           fill="none"
-          stroke="#c7ccd1"
+          stroke="#aeb4ba"
           stroke-width="1.35"/>
 
   <circle cx="23.6" cy="11.3" r="2.35"
           fill="none"
-          stroke="#c7ccd1"
+          stroke="#aeb4ba"
           stroke-width="1.35"/>
 
 </svg>)SVG";
@@ -1954,7 +1954,7 @@ void route_toolbar_pi::ShowObjectManager() {
 
   auto* list = new wxListCtrl(
       &dialog, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-      wxLC_REPORT | wxLC_SINGLE_SEL | wxBORDER_SUNKEN);
+      wxLC_REPORT | wxBORDER_SUNKEN);
   list->AppendColumn(_("Shown"), wxLIST_FORMAT_LEFT, 70);
   list->AppendColumn(_("Type"), wxLIST_FORMAT_LEFT, 90);
   list->AppendColumn(_("Route / start"), wxLIST_FORMAT_LEFT, 180);
@@ -2030,23 +2030,27 @@ void route_toolbar_pi::ShowObjectManager() {
   };
 
   auto set_selected_visibility = [&](bool visible) {
-    const long row =
-        list->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
-    if (row < 0) return;
+    bool changed = false;
+    long row = -1;
+    while ((row = list->GetNextItem(
+                row, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED)) >= 0) {
+      const long code = list->GetItemData(row);
+      const int type = static_cast<int>(code / 1000000L);
+      const size_t index = static_cast<size_t>(code % 1000000L);
 
-    const long code = list->GetItemData(row);
-    const int type = static_cast<int>(code / 1000000L);
-    const size_t index = static_cast<size_t>(code % 1000000L);
+      if (type == 1 && index < m_ebl_vrms.size()) {
+        m_ebl_vrms[index].visible = visible;
+        changed = true;
+      } else if (type == 2 && index < m_pils.size()) {
+        m_pils[index].visible = visible;
+        changed = true;
+      } else if (type == 3 && index < m_turns.size()) {
+        m_turns[index].visible = visible;
+        changed = true;
+      }
+    }
 
-    if (type == 1 && index < m_ebl_vrms.size())
-      m_ebl_vrms[index].visible = visible;
-    else if (type == 2 && index < m_pils.size())
-      m_pils[index].visible = visible;
-    else if (type == 3 && index < m_turns.size())
-      m_turns[index].visible = visible;
-    else
-      return;
-
+    if (!changed) return;
     SavePersistentState();
     populate();
     if (m_parent_window) RequestRefresh(m_parent_window);
@@ -2063,11 +2067,13 @@ void route_toolbar_pi::ShowObjectManager() {
   };
 
   auto* row1 = new wxBoxSizer(wxHORIZONTAL);
+  auto* select_all = new wxButton(&dialog, wxID_ANY, _("Select all"));
   auto* show_selected = new wxButton(&dialog, wxID_ANY, _("Show selected"));
   auto* hide_selected = new wxButton(&dialog, wxID_ANY, _("Hide selected"));
   auto* show_all = new wxButton(&dialog, wxID_ANY, _("Show all"));
   auto* hide_all = new wxButton(&dialog, wxID_ANY, _("Hide all"));
 
+  row1->Add(select_all, 0, wxRIGHT, 14);
   row1->Add(show_selected, 0, wxRIGHT, 6);
   row1->Add(hide_selected, 0, wxRIGHT, 14);
   row1->Add(show_all, 0, wxRIGHT, 6);
@@ -2083,6 +2089,10 @@ void route_toolbar_pi::ShowObjectManager() {
   row2->Add(close, 0);
   top->Add(row2, 0, wxEXPAND | wxALL, 10);
 
+  select_all->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+    for (long row = 0; row < list->GetItemCount(); ++row)
+      list->SetItemState(row, wxLIST_STATE_SELECTED, wxLIST_STATE_SELECTED);
+  });
   show_selected->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
     set_selected_visibility(true);
   });
@@ -2119,27 +2129,43 @@ void route_toolbar_pi::ShowObjectManager() {
   });
 
   del->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
-    const long row =
-        list->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
-    if (row < 0) return;
+    std::vector<size_t> ebl_indices;
+    std::vector<size_t> pil_indices;
+    std::vector<size_t> turn_indices;
 
-    const long code = list->GetItemData(row);
-    const int type = static_cast<int>(code / 1000000L);
-    const size_t index = static_cast<size_t>(code % 1000000L);
+    long row = -1;
+    while ((row = list->GetNextItem(
+                row, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED)) >= 0) {
+      const long code = list->GetItemData(row);
+      const int type = static_cast<int>(code / 1000000L);
+      const size_t index = static_cast<size_t>(code % 1000000L);
+      if (type == 1 && index < m_ebl_vrms.size()) ebl_indices.push_back(index);
+      else if (type == 2 && index < m_pils.size()) pil_indices.push_back(index);
+      else if (type == 3 && index < m_turns.size()) turn_indices.push_back(index);
+    }
 
-    if (wxMessageBox(_("Delete selected object?"), _("Route Objects"),
+    const size_t count = ebl_indices.size() + pil_indices.size() + turn_indices.size();
+    if (count == 0) return;
+
+    const wxString question = count == 1
+        ? _("Delete selected object?")
+        : wxString::Format(_("Delete %lu selected objects?"),
+                           static_cast<unsigned long>(count));
+    if (wxMessageBox(question, _("Route Objects"),
                      wxYES_NO | wxNO_DEFAULT | wxICON_WARNING,
                      &dialog) != wxYES)
       return;
 
-    if (type == 1 && index < m_ebl_vrms.size())
-      m_ebl_vrms.erase(m_ebl_vrms.begin() + index);
-    else if (type == 2 && index < m_pils.size())
-      m_pils.erase(m_pils.begin() + index);
-    else if (type == 3 && index < m_turns.size())
-      m_turns.erase(m_turns.begin() + index);
-    else
-      return;
+    auto erase_descending = [](auto& items, std::vector<size_t>& indices) {
+      std::sort(indices.rbegin(), indices.rend());
+      indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+      for (size_t index : indices) {
+        if (index < items.size()) items.erase(items.begin() + index);
+      }
+    };
+    erase_descending(m_ebl_vrms, ebl_indices);
+    erase_descending(m_pils, pil_indices);
+    erase_descending(m_turns, turn_indices);
 
     SavePersistentState();
     populate();
