@@ -59,6 +59,11 @@ if(APPLE)
     VERBATIM
     COMMENT "Relinking wxWidgets dependencies to OpenCPN.app Frameworks and ad-hoc signing"
   )
+elseif(WIN32)
+  target_link_libraries(route_toolbar_pi PRIVATE opengl32)
+else()
+  find_package(OpenGL REQUIRED)
+  target_link_libraries(route_toolbar_pi PRIVATE OpenGL::GL)
 endif()
 
 set_target_properties(route_toolbar_pi PROPERTIES
