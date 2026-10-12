@@ -60,6 +60,14 @@ public:
   int GetLabelFontSize() const { return m_label_font_size; }
   void SetLabelFontSize(int point_size);
 
+  bool GetNotesVisible() const { return m_notes_visible; }
+  void SetNotesVisible(bool visible) {
+    if (m_notes_visible == visible) return;
+    m_notes_visible = visible;
+    SavePersistentState();
+    if (m_parent_window) RequestRefresh(m_parent_window);
+  }
+
   const wxColour& GetEblColour() const { return m_ebl_colour; }
   const wxColour& GetPilColour() const { return m_pil_colour; }
   void SetEblColour(const wxColour& colour) {
@@ -157,6 +165,7 @@ private:
     Idle,
     AwaitRoutePoint,
     AwaitTarget,
+    MoveExistingStart,
     MoveExistingTarget,
     MoveExistingLabel,
   };
@@ -183,7 +192,11 @@ private:
   bool RefreshEblStartFromMark(RouteEblVrm& item) const;
   int FindNearestEblTarget(double lat, double lon,
                            double max_distance_nm) const;
+  int FindNearestEblGeometry(double lat, double lon,
+                             double max_distance_nm) const;
   void ShowEblTargetActions(int index);
+  void BeginMoveEblStart(int index);
+  bool CommitMoveEblStart(double start_lat, double start_lon);
   void BeginMoveEblTarget(int index);
   bool CommitMoveEblTarget(double target_lat, double target_lon);
 
@@ -225,6 +238,11 @@ private:
                   bool preview) const;
   void DrawEblVrmGL(PlugIn_ViewPort* vp, const RouteEblVrm& item,
                     bool preview) const;
+  void DrawRouteLegLabels(wxDC& dc, PlugIn_ViewPort* vp) const;
+  void DrawRouteLegLabelsGL(PlugIn_ViewPort* vp) const;
+  wxColour ResolveRouteColour(const wxString& route_guid) const;
+  void DrawGlText(const wxString& label, int x, int y,
+                  const wxColour& colour) const;
   void DrawGlLabel(const wxString& label, int x, int y) const;
   static double NormalizeBearing(double bearing);
 
@@ -254,6 +272,7 @@ private:
 
   wxTimer* m_delayed_state_load{nullptr};
   int m_label_font_size{14};
+  bool m_notes_visible{true};
   wxColour m_ebl_colour{210, 0, 220};
   wxColour m_pil_colour{0, 105, 125};
   double m_cursor_lat{0.0};
