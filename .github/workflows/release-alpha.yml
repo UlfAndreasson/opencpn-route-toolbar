@@ -1,0 +1,195 @@
+name: Route Toolbar 0.5.9 Alpha release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/release-alpha.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: brew install cmake wxwidgets@3.2
+      - name: Build arm64
+        run: |
+          WX_PREFIX="$(brew --prefix wxwidgets@3.2)"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DwxWidgets_CONFIG_EXECUTABLE="$WX_PREFIX/bin/wx-config-3.2"
+          cmake --build build --config Release -j 2
+          lipo -info build/libroute_toolbar_pi.dylib | grep -q arm64
+          if otool -L build/libroute_toolbar_pi.dylib | grep -E '/opt/homebrew|/usr/local/Cellar'; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-slice
+          path: build/libroute_toolbar_pi.dylib
+
+  macos-x86_64:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: brew install cmake wxwidgets@3.2
+      - name: Build x86_64
+        run: |
+          WX_PREFIX="$(brew --prefix wxwidgets@3.2)"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DwxWidgets_CONFIG_EXECUTABLE="$WX_PREFIX/bin/wx-config-3.2"
+          cmake --build build --config Release -j 2
+          lipo -info build/libroute_toolbar_pi.dylib | grep -q x86_64
+          if otool -L build/libroute_toolbar_pi.dylib | grep -E '/opt/homebrew|/usr/local/Cellar'; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-x86_64-slice
+          path: build/libroute_toolbar_pi.dylib
+
+  macos-universal-package:
+    needs: [macos-arm64, macos-x86_64]
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-arm64-slice
+          path: slices/arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-x86_64-slice
+          path: slices/x86_64
+      - name: Create universal Plugin Manager package
+        run: |
+          mkdir -p universal
+          lipo -create \
+            slices/arm64/libroute_toolbar_pi.dylib \
+            slices/x86_64/libroute_toolbar_pi.dylib \
+            -output universal/libroute_toolbar_pi.dylib
+          codesign --force --sign - universal/libroute_toolbar_pi.dylib
+          lipo -info universal/libroute_toolbar_pi.dylib | grep -q arm64
+          lipo -info universal/libroute_toolbar_pi.dylib | grep -q x86_64
+          if otool -L universal/libroute_toolbar_pi.dylib | grep -E '/opt/homebrew|/usr/local/Cellar'; then exit 1; fi
+          ROOT='route_toolbar_pi-0.5.9_darwin-wx32-10-universal'
+          mkdir -p "dist/$ROOT/OpenCPN.app/Contents/PlugIns"
+          cp universal/libroute_toolbar_pi.dylib "dist/$ROOT/OpenCPN.app/Contents/PlugIns/libroute_toolbar_pi.dylib"
+          sed 's/@VERSION@/0.5.9/g' packaging/macos/package-metadata-universal.xml.in > "dist/$ROOT/metadata.xml"
+          xmllint --noout "dist/$ROOT/metadata.xml"
+          tar -C dist -czf "dist/$ROOT.tar.gz" "$ROOT"
+          shasum -a 256 "dist/$ROOT.tar.gz" > "dist/$ROOT.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpha-macos-package
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+
+  linux-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libwxgtk3.2-dev libgl1-mesa-dev libxml2-utils
+      - name: Build and package
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j 2
+          file build/libroute_toolbar_pi.so
+          ROOT='route_toolbar_pi-0.5.9_ubuntu-gtk3-x86_64-24.04'
+          mkdir -p "dist/$ROOT/lib/opencpn"
+          cp build/libroute_toolbar_pi.so "dist/$ROOT/lib/opencpn/libroute_toolbar_pi.so"
+          sed 's/@VERSION@/0.5.9/g' packaging/linux/package-metadata.xml.in > "dist/$ROOT/metadata.xml"
+          xmllint --noout "dist/$ROOT/metadata.xml"
+          tar -C dist -czf "dist/$ROOT.tar.gz" "$ROOT"
+          sha256sum "dist/$ROOT.tar.gz" > "dist/$ROOT.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpha-linux-package
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+
+  windows-package:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Download wxWidgets 3.2 build kit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '3.2.9'
+          $wx = Join-Path $env:GITHUB_WORKSPACE 'wxWidgets-x64'
+          New-Item -ItemType Directory -Force -Path $wx | Out-Null
+          Invoke-WebRequest "https://github.com/wxWidgets/wxWidgets/releases/download/v$version/wxWidgets-$version-headers.7z" -OutFile wx-headers.7z
+          Invoke-WebRequest "https://github.com/wxWidgets/wxWidgets/releases/download/v$version/wxMSW-${version}_vc14x_x64_ReleaseDLL.7z" -OutFile wx-dll.7z
+          Invoke-WebRequest "https://github.com/wxWidgets/wxWidgets/releases/download/v$version/wxMSW-${version}_vc14x_x64_Dev.7z" -OutFile wx-dev.7z
+          7z x -y wx-headers.7z "-o$wx" | Out-Null
+          7z x -y wx-dll.7z "-o$wx" | Out-Null
+          7z x -y wx-dev.7z "-o$wx" | Out-Null
+          "WX_ROOT=$wx" >> $env:GITHUB_ENV
+          "WX_LIB=$wx\lib\vc14x_x64_dll" >> $env:GITHUB_ENV
+      - name: Build and package
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DwxWidgets_ROOT_DIR="$env:WX_ROOT" `
+            -DwxWidgets_LIB_DIR="$env:WX_LIB"
+          cmake --build build --config Release --parallel 2
+          $root = 'route_toolbar_pi-0.5.9_msvc-wx32-10-x86_64'
+          $stage = Join-Path 'dist' $root
+          New-Item -ItemType Directory -Force -Path (Join-Path $stage 'plugins') | Out-Null
+          Copy-Item 'build/Release/route_toolbar_pi.dll' (Join-Path $stage 'plugins/route_toolbar_pi.dll')
+          $metadata = (Get-Content 'packaging/windows/package-metadata.xml.in' -Raw).Replace('@VERSION@', '0.5.9')
+          Set-Content -Path (Join-Path $stage 'metadata.xml') -Value $metadata -Encoding utf8
+          [xml](Get-Content (Join-Path $stage 'metadata.xml') -Raw) | Out-Null
+          tar -C dist -czf "dist/$root.tar.gz" $root
+          $hash = (Get-FileHash "dist/$root.tar.gz" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $root.tar.gz" | Set-Content "dist/$root.tar.gz.sha256" -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpha-windows-package
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+
+  release:
+    name: Publish GitHub prerelease
+    needs: [macos-universal-package, linux-package, windows-package]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: alpha-*-package
+          path: release-assets
+          merge-multiple: true
+      - name: List release assets
+        run: ls -lah release-assets
+      - name: Publish v0.5.9-alpha1
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.5.9-alpha1
+          name: Route Toolbar 0.5.9 Alpha 1
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            release-assets/*.tar.gz
+            release-assets/*.sha256
