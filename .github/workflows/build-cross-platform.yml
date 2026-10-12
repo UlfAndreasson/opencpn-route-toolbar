@@ -1,0 +1,175 @@
+name: Cross-platform build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ci/cross-platform-v0.5.9
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'cmake/**'
+      - 'packaging/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/build-cross-platform.yml'
+
+jobs:
+  macos-intel:
+    name: macOS Intel x86_64
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install cmake wxwidgets@3.2
+
+      - name: Configure
+        run: |
+          WX_PREFIX="$(brew --prefix wxwidgets@3.2)"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DwxWidgets_CONFIG_EXECUTABLE="$WX_PREFIX/bin/wx-config-3.2"
+
+      - name: Build
+        run: cmake --build build --config Release -j 2
+
+      - name: Verify binary
+        run: |
+          file build/libroute_toolbar_pi.dylib
+          lipo -info build/libroute_toolbar_pi.dylib
+          otool -L build/libroute_toolbar_pi.dylib
+          lipo -info build/libroute_toolbar_pi.dylib | grep -q 'x86_64'
+          if otool -L build/libroute_toolbar_pi.dylib | grep -E '/usr/local/Cellar|/opt/homebrew'; then
+            echo "Homebrew runtime dependency remains in plugin" >&2
+            exit 1
+          fi
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-toolbar-0.5.9-macos-intel-x86_64
+          path: build/libroute_toolbar_pi.dylib
+
+  linux-x86_64:
+    name: Linux x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libwxgtk3.2-dev libgl1-mesa-dev libxml2-utils
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j 2
+
+      - name: Verify binary
+        run: |
+          file build/libroute_toolbar_pi.so
+          ldd build/libroute_toolbar_pi.so
+          test "$(uname -m)" = "x86_64"
+
+      - name: Build Plugin Manager test package
+        run: |
+          ROOT="route_toolbar_pi-0.5.9_ubuntu-gtk3-x86_64-24.04"
+          mkdir -p "dist/$ROOT/lib/opencpn"
+          cp build/libroute_toolbar_pi.so "dist/$ROOT/lib/opencpn/libroute_toolbar_pi.so"
+          sed 's/@VERSION@/0.5.9/g' packaging/linux/package-metadata.xml.in > "dist/$ROOT/metadata.xml"
+          xmllint --noout "dist/$ROOT/metadata.xml"
+          tar -C dist -czf "dist/$ROOT.tar.gz" "$ROOT"
+          tar -tzf "dist/$ROOT.tar.gz" | tee /tmp/route-toolbar-linux-package.txt
+          grep -q "$ROOT/metadata.xml" /tmp/route-toolbar-linux-package.txt
+          grep -q "$ROOT/lib/opencpn/libroute_toolbar_pi.so" /tmp/route-toolbar-linux-package.txt
+
+      - name: Upload Linux build and Plugin Manager package
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-toolbar-0.5.9-linux-x86_64
+          path: |
+            build/libroute_toolbar_pi.so
+            dist/route_toolbar_pi-0.5.9_ubuntu-gtk3-x86_64-24.04.tar.gz
+
+  windows-x86_64:
+    name: Windows x86_64
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download wxWidgets 3.2 build kit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '3.2.9'
+          $wx = Join-Path $env:GITHUB_WORKSPACE 'wxWidgets-x64'
+          New-Item -ItemType Directory -Force -Path $wx | Out-Null
+          Invoke-WebRequest "https://github.com/wxWidgets/wxWidgets/releases/download/v$version/wxWidgets-$version-headers.7z" -OutFile wx-headers.7z
+          Invoke-WebRequest "https://github.com/wxWidgets/wxWidgets/releases/download/v$version/wxMSW-${version}_vc14x_x64_ReleaseDLL.7z" -OutFile wx-dll.7z
+          Invoke-WebRequest "https://github.com/wxWidgets/wxWidgets/releases/download/v$version/wxMSW-${version}_vc14x_x64_Dev.7z" -OutFile wx-dev.7z
+          7z x -y wx-headers.7z "-o$wx" | Out-Null
+          7z x -y wx-dll.7z "-o$wx" | Out-Null
+          7z x -y wx-dev.7z "-o$wx" | Out-Null
+          "WX_ROOT=$wx" >> $env:GITHUB_ENV
+          "WX_LIB=$wx\lib\vc14x_x64_dll" >> $env:GITHUB_ENV
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DwxWidgets_ROOT_DIR="$env:WX_ROOT" `
+            -DwxWidgets_LIB_DIR="$env:WX_LIB"
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Verify binary
+        shell: cmd
+        run: |
+          where dumpbin
+          dumpbin /headers build\Release\route_toolbar_pi.dll | findstr /I "machine x64"
+          dumpbin /dependents build\Release\route_toolbar_pi.dll
+
+      - name: Build Plugin Manager test package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'route_toolbar_pi-0.5.9_msvc-wx32-10-x86_64'
+          $stage = Join-Path 'dist' $root
+          New-Item -ItemType Directory -Force -Path (Join-Path $stage 'plugins') | Out-Null
+          Copy-Item 'build/Release/route_toolbar_pi.dll' (Join-Path $stage 'plugins/route_toolbar_pi.dll')
+          $metadata = (Get-Content 'packaging/windows/package-metadata.xml.in' -Raw).Replace('@VERSION@', '0.5.9')
+          Set-Content -Path (Join-Path $stage 'metadata.xml') -Value $metadata -Encoding utf8
+          [xml](Get-Content (Join-Path $stage 'metadata.xml') -Raw) | Out-Null
+          tar -C dist -czf "dist/$root.tar.gz" $root
+          $listing = tar -tzf "dist/$root.tar.gz"
+          $listing
+          if (-not ($listing -match "$root/metadata.xml")) { throw 'metadata.xml missing from Windows tarball' }
+          if (-not ($listing -match "$root/plugins/route_toolbar_pi.dll")) { throw 'plugin DLL missing from Windows tarball' }
+
+      - name: Upload Windows build and Plugin Manager package
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-toolbar-0.5.9-windows-x86_64
+          path: |
+            build/Release/route_toolbar_pi.dll
+            dist/route_toolbar_pi-0.5.9_msvc-wx32-10-x86_64.tar.gz

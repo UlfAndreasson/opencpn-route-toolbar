@@ -59,6 +59,15 @@ if(APPLE)
     VERBATIM
     COMMENT "Relinking wxWidgets dependencies to OpenCPN.app Frameworks and ad-hoc signing"
   )
+elseif(WIN32)
+  # The Windows SDK OpenGL 1.1 header does not declare this later constant,
+  # while OpenCPN's GL context supports it. Keep source portable without
+  # pulling in a separate extension loader just for GL_CLAMP_TO_EDGE.
+  target_compile_definitions(route_toolbar_pi PRIVATE GL_CLAMP_TO_EDGE=0x812F)
+  target_link_libraries(route_toolbar_pi PRIVATE opengl32)
+else()
+  find_package(OpenGL REQUIRED)
+  target_link_libraries(route_toolbar_pi PRIVATE OpenGL::GL)
 endif()
 
 set_target_properties(route_toolbar_pi PROPERTIES
