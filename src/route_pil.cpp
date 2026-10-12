@@ -23,7 +23,7 @@ constexpr double kPi = 3.14159265358979323846;
 constexpr double kPilLegPickRadiusNm = 0.08;
 constexpr double kPilMinimumOffsetNm = 0.005;
 constexpr double kPilMaxOffsetNm = 5.0;
-constexpr int kPilDashSegments = 28;
+constexpr int kPilDashSegments = 56;
 
 struct XY {
   double x{0.0};  // east, NM
@@ -59,6 +59,7 @@ wxString PilLabel(double offset_nm) {
 
 void route_toolbar_pi::BeginPil() {
   if (!m_dialog_visible) ShowToolWindow();
+  m_turn_mode = TurnMode::Idle;
   m_ebl_mode = EblMode::Idle;
   m_pending_start = RouteWaypointHit{};
   m_edit_item_index = -1;
@@ -302,20 +303,22 @@ void route_toolbar_pi::DrawPil(wxDC& dc, PlugIn_ViewPort* vp,
   const wxColour old_text = dc.GetTextForeground();
 
   const wxColour colour = m_pil_colour;
-  dc.SetPen(wxPen(colour, preview ? 1 : 2, wxPENSTYLE_LONG_DASH));
+  dc.SetPen(wxPen(colour, preview ? 1 : 2, wxPENSTYLE_SHORT_DASH));
   dc.SetBrush(*wxTRANSPARENT_BRUSH);
   dc.DrawLine(start_px, end_px);
   dc.DrawCircle(anchor_px, preview ? 4 : 6);
 
-  const wxString label = PilLabel(item.offset_nm);
-  dc.SetFont(GetEblLabelFont());
-  const wxSize text = dc.GetTextExtent(label);
-  const wxPoint pos(anchor_px.x + 12, anchor_px.y - text.y - 10);
-  dc.SetPen(*wxTRANSPARENT_PEN);
-  dc.SetBrush(wxBrush(wxColour(205, 245, 245)));
-  dc.DrawRectangle(pos.x - 4, pos.y - 3, text.x + 8, text.y + 6);
-  dc.SetTextForeground(*wxBLACK);
-  dc.DrawText(label, pos);
+  if (m_notes_visible) {
+    const wxString label = PilLabel(item.offset_nm);
+    dc.SetFont(GetEblLabelFont());
+    const wxSize text = dc.GetTextExtent(label);
+    const wxPoint pos(anchor_px.x + 12, anchor_px.y - text.y - 10);
+    dc.SetPen(*wxTRANSPARENT_PEN);
+    dc.SetBrush(wxBrush(wxColour(205, 245, 245)));
+    dc.DrawRectangle(pos.x - 4, pos.y - 3, text.x + 8, text.y + 6);
+    dc.SetTextForeground(*wxBLACK);
+    dc.DrawText(label, pos);
+  }
 
   dc.SetPen(old_pen);
   dc.SetBrush(old_brush);
@@ -364,8 +367,9 @@ void route_toolbar_pi::DrawPilGL(PlugIn_ViewPort* vp, const RoutePil& item,
   }
   glEnd();
 
-  DrawGlLabel(PilLabel(item.offset_nm), anchor_px.x + 12,
-              anchor_px.y - 30);
+  if (m_notes_visible)
+    DrawGlLabel(PilLabel(item.offset_nm), anchor_px.x + 12,
+                anchor_px.y - 30);
 }
 
 void route_toolbar_pi::LoadPilPersistentState(wxFileConfig* config) {
@@ -387,6 +391,8 @@ void route_toolbar_pi::LoadPilPersistentState(wxFileConfig* config) {
         !config->Read(prefix + "AnchorLat", &item.anchor_lat) ||
         !config->Read(prefix + "AnchorLon", &item.anchor_lon))
       continue;
+
+    config->Read(prefix + "Visible", &item.visible, true);
 
     long leg_index = 0;
     config->Read(prefix + "LegIndex", &leg_index, 0L);
@@ -417,8 +423,10 @@ void route_toolbar_pi::LoadPilPersistentState(wxFileConfig* config) {
     leg.course_true = NormalizeBearing(leg.course_true);
 
     RoutePil rebuilt;
-    if (BuildPilFromAnchor(leg, item.anchor_lat, item.anchor_lon, rebuilt))
+    if (BuildPilFromAnchor(leg, item.anchor_lat, item.anchor_lon, rebuilt)) {
+      rebuilt.visible = item.visible;
       m_pils.push_back(rebuilt);
+    }
   }
 }
 
@@ -434,6 +442,7 @@ void route_toolbar_pi::SavePilPersistentState(wxFileConfig* config) const {
     const wxString prefix = wxString::Format(
         "Item%03lu/", static_cast<unsigned long>(i));
     const RoutePil& item = m_pils[i];
+    config->Write(prefix + "Visible", item.visible);
     config->Write(prefix + "LegStartLat", item.leg_start_lat);
     config->Write(prefix + "LegStartLon", item.leg_start_lon);
     config->Write(prefix + "LegEndLat", item.leg_end_lat);
