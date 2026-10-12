@@ -21,7 +21,8 @@ enum : int {
   ID_ROUTE_GPX,
   ID_LABEL_SIZE,
   ID_EBL_COLOUR,
-  ID_PIL_COLOUR
+  ID_PIL_COLOUR,
+  ID_NOTES_VISIBILITY
 };
 }
 
@@ -80,6 +81,13 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   colour_row->Add(m_pil_colour, 0, wxALIGN_CENTER_VERTICAL);
   top->Add(colour_row, 0, wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
+  m_notes_button = new wxButton(
+      this, ID_NOTES_VISIBILITY,
+      m_plugin && !m_plugin->GetNotesVisible()
+          ? _("View all yellow notes")
+          : _("Hide all yellow notes"));
+  top->Add(m_notes_button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+
   m_status = new wxStaticText(
       this, wxID_ANY,
       _("Route EBL/VRM, Route PIL and Route Report are ready."));
@@ -101,6 +109,8 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
        ID_EBL_COLOUR);
   Bind(wxEVT_COLOURPICKER_CHANGED, &RouteToolbarDialog::OnPilColour, this,
        ID_PIL_COLOUR);
+  Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnNotesVisibility, this,
+       ID_NOTES_VISIBILITY);
   Bind(wxEVT_CLOSE_WINDOW, &RouteToolbarDialog::OnClose, this);
 }
 
@@ -169,6 +179,15 @@ void RouteToolbarDialog::OnEblColour(wxColourPickerEvent& event) {
 
 void RouteToolbarDialog::OnPilColour(wxColourPickerEvent& event) {
   if (m_plugin) m_plugin->SetPilColour(event.GetColour());
+}
+
+void RouteToolbarDialog::OnNotesVisibility(wxCommandEvent&) {
+  if (!m_plugin || !m_notes_button) return;
+  const bool visible = !m_plugin->GetNotesVisible();
+  m_plugin->SetNotesVisible(visible);
+  m_notes_button->SetLabel(visible ? _("Hide all yellow notes")
+                                   : _("View all yellow notes"));
+  Layout();
 }
 
 void RouteToolbarDialog::OnClose(wxCloseEvent&) {
