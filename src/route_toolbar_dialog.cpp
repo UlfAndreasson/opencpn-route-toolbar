@@ -17,17 +17,21 @@ namespace {
 enum : int {
   ID_ROUTE_EBL_VRM = wxID_HIGHEST + 410,
   ID_ROUTE_PIL,
+  ID_ROUTE_TURN,
+  ID_ROUTE_OBJECTS,
   ID_ROUTE_REPORT,
   ID_ROUTE_GPX,
   ID_LABEL_SIZE,
   ID_EBL_COLOUR,
-  ID_PIL_COLOUR
+  ID_PIL_COLOUR,
+  ID_TURN_COLOUR
 };
 }
 
 RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugin)
     : wxDialog(parent, wxID_ANY, _("Route Toolbar"), wxDefaultPosition,
-               wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
+               wxDefaultSize,
+               wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER | wxSTAY_ON_TOP),
       m_plugin(plugin) {
   if (m_plugin) m_plugin->EnsureContextMenu();
 
@@ -42,11 +46,15 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   m_ebl_button =
       new wxToggleButton(this, ID_ROUTE_EBL_VRM, _("Route EBL / VRM"));
   m_pil_button = new wxToggleButton(this, ID_ROUTE_PIL, _("Route PIL"));
+  m_turn_button = new wxToggleButton(this, ID_ROUTE_TURN, _("Route TURN"));
+  auto* objects = new wxButton(this, ID_ROUTE_OBJECTS, _("Route Objects..."));
   auto* report = new wxButton(this, ID_ROUTE_REPORT, _("Route Report"));
   auto* gpx = new wxButton(this, ID_ROUTE_GPX, _("Route GPX..."));
 
   top->Add(m_ebl_button, 0, wxEXPAND | wxALL, 10);
   top->Add(m_pil_button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+  top->Add(m_turn_button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+  top->Add(objects, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
   top->Add(report, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
   top->Add(gpx, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
@@ -77,12 +85,20 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
       this, ID_PIL_COLOUR,
       m_plugin ? m_plugin->GetPilColour() : wxColour(0, 105, 125),
       wxDefaultPosition, wxSize(55, -1));
-  colour_row->Add(m_pil_colour, 0, wxALIGN_CENTER_VERTICAL);
+  colour_row->Add(m_pil_colour, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 18);
+
+  colour_row->Add(new wxStaticText(this, wxID_ANY, _("TURN:")),
+                  0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+  m_turn_colour = new wxColourPickerCtrl(
+      this, ID_TURN_COLOUR,
+      m_plugin ? m_plugin->GetTurnColour() : wxColour(255, 125, 0),
+      wxDefaultPosition, wxSize(55, -1));
+  colour_row->Add(m_turn_colour, 0, wxALIGN_CENTER_VERTICAL);
   top->Add(colour_row, 0, wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
   m_status = new wxStaticText(
       this, wxID_ANY,
-      _("Route EBL/VRM, Route PIL and Route Report are ready."));
+      _("Route EBL/VRM, Route PIL, Route TURN and Route Report are ready."));
   m_status->Wrap(360);
   top->Add(new wxStaticLine(this), 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
   top->Add(m_status, 0, wxEXPAND | wxALL, 10);
@@ -93,6 +109,8 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   Bind(wxEVT_TOGGLEBUTTON, &RouteToolbarDialog::OnEblVrm, this,
        ID_ROUTE_EBL_VRM);
   Bind(wxEVT_TOGGLEBUTTON, &RouteToolbarDialog::OnPil, this, ID_ROUTE_PIL);
+  Bind(wxEVT_TOGGLEBUTTON, &RouteToolbarDialog::OnTurn, this, ID_ROUTE_TURN);
+  Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnObjects, this, ID_ROUTE_OBJECTS);
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnReport, this, ID_ROUTE_REPORT);
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnGpx, this, ID_ROUTE_GPX);
   Bind(wxEVT_SPINCTRL, &RouteToolbarDialog::OnLabelSize, this, ID_LABEL_SIZE);
@@ -101,6 +119,8 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
        ID_EBL_COLOUR);
   Bind(wxEVT_COLOURPICKER_CHANGED, &RouteToolbarDialog::OnPilColour, this,
        ID_PIL_COLOUR);
+  Bind(wxEVT_COLOURPICKER_CHANGED, &RouteToolbarDialog::OnTurnColour, this,
+       ID_TURN_COLOUR);
   Bind(wxEVT_CLOSE_WINDOW, &RouteToolbarDialog::OnClose, this);
 }
 
@@ -113,18 +133,20 @@ void RouteToolbarDialog::SetStatus(const wxString& text) {
   Layout();
 }
 
-void RouteToolbarDialog::SetToolButtons(bool ebl_active, bool pil_active) {
+void RouteToolbarDialog::SetToolButtons(bool ebl_active, bool pil_active,
+                                            bool turn_active) {
   if (m_ebl_button) m_ebl_button->SetValue(ebl_active);
   if (m_pil_button) m_pil_button->SetValue(pil_active);
+  if (m_turn_button) m_turn_button->SetValue(turn_active);
 }
 
 void RouteToolbarDialog::OnEblVrm(wxCommandEvent& event) {
   if (!m_plugin) return;
   if (event.IsChecked()) {
-    SetToolButtons(true, false);
+    SetToolButtons(true, false, false);
     m_plugin->BeginEblVrm();
   } else {
-    SetToolButtons(false, false);
+    SetToolButtons(false, false, false);
     m_plugin->CancelInteractiveTool();
   }
 }
@@ -132,24 +154,42 @@ void RouteToolbarDialog::OnEblVrm(wxCommandEvent& event) {
 void RouteToolbarDialog::OnPil(wxCommandEvent& event) {
   if (!m_plugin) return;
   if (event.IsChecked()) {
-    SetToolButtons(false, true);
+    SetToolButtons(false, true, false);
     m_plugin->BeginPil();
   } else {
-    SetToolButtons(false, false);
+    SetToolButtons(false, false, false);
     m_plugin->CancelInteractiveTool();
   }
 }
 
+void RouteToolbarDialog::OnTurn(wxCommandEvent& event) {
+  if (!m_plugin) return;
+  if (event.IsChecked()) {
+    SetToolButtons(false, false, true);
+    m_plugin->BeginTurn();
+  } else {
+    SetToolButtons(false, false, false);
+    m_plugin->CancelInteractiveTool();
+  }
+}
+
+void RouteToolbarDialog::OnObjects(wxCommandEvent&) {
+  if (!m_plugin) return;
+  SetToolButtons(false, false, false);
+  m_plugin->CancelInteractiveTool();
+  m_plugin->ShowObjectManager();
+}
+
 void RouteToolbarDialog::OnReport(wxCommandEvent&) {
   if (!m_plugin) return;
-  SetToolButtons(false, false);
+  SetToolButtons(false, false, false);
   m_plugin->CancelInteractiveTool();
   m_plugin->ExportRouteReport();
 }
 
 void RouteToolbarDialog::OnGpx(wxCommandEvent&) {
   if (!m_plugin) return;
-  SetToolButtons(false, false);
+  SetToolButtons(false, false, false);
   m_plugin->CancelInteractiveTool();
   m_plugin->RouteGpx();
 }
@@ -169,6 +209,10 @@ void RouteToolbarDialog::OnEblColour(wxColourPickerEvent& event) {
 
 void RouteToolbarDialog::OnPilColour(wxColourPickerEvent& event) {
   if (m_plugin) m_plugin->SetPilColour(event.GetColour());
+}
+
+void RouteToolbarDialog::OnTurnColour(wxColourPickerEvent& event) {
+  if (m_plugin) m_plugin->SetTurnColour(event.GetColour());
 }
 
 void RouteToolbarDialog::OnClose(wxCloseEvent&) {

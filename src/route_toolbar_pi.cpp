@@ -8,6 +8,7 @@
 #include <set>
 
 #include <wx/brush.h>
+#include <wx/button.h>
 #include <wx/timer.h>
 #include <wx/choicdlg.h>
 #include <wx/dc.h>
@@ -17,8 +18,11 @@
 #include <wx/filename.h>
 #include <wx/font.h>
 #include <wx/image.h>
+#include <wx/listctrl.h>
 #include <wx/intl.h>
 #include <wx/msgdlg.h>
+#include <wx/sizer.h>
+#include <wx/stattext.h>
 #include <wx/pen.h>
 #include <wx/stdpaths.h>
 #include <wx/textdlg.h>
@@ -43,10 +47,11 @@
 
 namespace {
 constexpr int kPluginVersionMajor = 0;
-constexpr int kPluginVersionMinor = 4;
+constexpr int kPluginVersionMinor = 5;
 constexpr int kPluginVersionPatch = 0;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
+constexpr double kTurnAnchorPickRadiusNm = 0.025;
 constexpr double kDefaultArcWidthDeg = 30.0;
 constexpr int kArcSegments = 30;
 constexpr int kTargetRingRadiusPx = 7;
@@ -157,6 +162,34 @@ wxPoint PointOnTargetRingTowards(const wxPoint& target,
       target.x + static_cast<int>(std::lround(radius * dx / length)),
       target.y + static_cast<int>(std::lround(radius * dy / length)));
 }
+
+
+int ShowRouteToolbarActionButtons(wxWindow* parent,
+                                  const wxString& title,
+                                  const wxString& prompt,
+                                  const wxArrayString& labels) {
+  wxDialog dialog(parent, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
+                  wxDEFAULT_DIALOG_STYLE | wxSTAY_ON_TOP);
+  auto* top = new wxBoxSizer(wxVERTICAL);
+  auto* text = new wxStaticText(&dialog, wxID_ANY, prompt);
+  text->Wrap(360);
+  top->Add(text, 0, wxEXPAND | wxALL, 12);
+  for (size_t i = 0; i < labels.GetCount(); ++i) {
+    auto* b = new wxButton(&dialog, wxID_ANY, labels[i]);
+    top->Add(b, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
+    b->Bind(wxEVT_BUTTON, [&dialog, i](wxCommandEvent&) {
+      dialog.EndModal(static_cast<int>(i) + 1);
+    });
+  }
+  auto* cancel = new wxButton(&dialog, wxID_CANCEL, _("Cancel"));
+  top->Add(cancel, 0, wxALIGN_RIGHT | wxALL, 10);
+  dialog.SetSizerAndFit(top);
+  dialog.SetMinSize(wxSize(380, dialog.GetSize().GetHeight()));
+  dialog.CentreOnParent();
+  const int result = dialog.ShowModal();
+  return result > 0 ? result - 1 : -1;
+}
+
 
 
 class RouteToolbarDelayedLoadTimer final : public wxTimer {
@@ -308,13 +341,14 @@ wxFont route_toolbar_pi::GetEblLabelFont() const {
 
 void route_toolbar_pi::BeginEblVrm() {
   if (!m_dialog_visible) ShowToolWindow();
+  m_turn_mode = TurnMode::Idle;
   m_pil_mode = PilMode::Idle;
   m_pending_leg = RouteLegHit{};
   m_pending_start = RouteWaypointHit{};
   m_edit_item_index = -1;
   m_edit_pil_index = -1;
   m_ebl_mode = EblMode::AwaitRoutePoint;
-  SetStatus(_("Route EBL/VRM: click a route waypoint or an OpenCPN mark. The nearest start object within 0.10 NM is selected. Then click the lighthouse, buoy, beacon or other sight mark. Right-click to cancel."));
+  SetStatus(_("Route EBL/VRM: click exactly where the EBL/VRM shall start. Hold Shift while clicking to snap to a nearby TURN point, route waypoint or OpenCPN mark. Then click the sight mark. Right-click to cancel."));
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
@@ -325,6 +359,7 @@ void route_toolbar_pi::CancelInteractiveTool() {
   m_pil_mode = PilMode::Idle;
   m_pending_leg = RouteLegHit{};
   m_edit_pil_index = -1;
+  m_turn_mode = TurnMode::Idle;
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
@@ -340,6 +375,30 @@ void route_toolbar_pi::SetCursorLatLon(double lat, double lon) {
 }
 
 bool route_toolbar_pi::MouseEventHook(wxMouseEvent& event) {
+
+  if (m_turn_mode != TurnMode::Idle) {
+    if (event.RightDown()) {
+      m_turn_mode = TurnMode::Idle;
+      SetStatus(_("Route TURN stopped. Existing turns remain visible."));
+      if (m_parent_window) RequestRefresh(m_parent_window);
+      return true;
+    }
+
+    if (!event.LeftDown() || !m_has_cursor) return false;
+
+    const RouteWaypointHit hit = FindNearestInteriorRouteWaypoint(
+        m_cursor_lat, m_cursor_lon, kWaypointPickRadiusNm);
+
+    if (!hit.found) {
+      SetStatus(_("No interior route waypoint found within 0.10 NM. "
+                  "TURN requires a waypoint with both an inbound and an "
+                  "outbound route leg."));
+      return true;
+    }
+
+    CreateOrEditTurn(hit);
+    return true;
+  }
 
   if (m_ebl_mode == EblMode::MoveExistingLabel) {
     if (event.RightDown()) {
@@ -425,28 +484,65 @@ bool route_toolbar_pi::MouseEventHook(wxMouseEvent& event) {
 
   if (m_ebl_mode == EblMode::Idle) return false;
   if (m_ebl_mode == EblMode::AwaitRoutePoint) {
-    const auto hit = FindNearestEblStart(m_cursor_lat, m_cursor_lon,
-                                         kWaypointPickRadiusNm);
-    if (!hit.found) {
-      SetStatus(_("No route waypoint or OpenCPN mark found within 0.10 NM. Click closer to the intended start point."));
-      return true;
+    RouteWaypointHit hit;
+
+    if (event.ShiftDown()) {
+      hit = FindNearestEblStart(
+          m_cursor_lat, m_cursor_lon, kWaypointPickRadiusNm);
+
+      if (!hit.found) {
+        SetStatus(_("Shift-snap: no TURN point, route waypoint or OpenCPN mark was found close enough. Click normally for an exact free start, or Shift-click closer to the object."));
+        return true;
+      }
+    } else {
+      // Default behaviour: the EBL starts exactly where the user clicked.
+      // It is intentionally not live-linked to a WP, Mark or TURN object.
+      hit.found = true;
+      hit.is_free_point = true;
+      hit.lat = m_cursor_lat;
+      hit.lon = m_cursor_lon;
+      hit.waypoint_name = _("Free point");
+
+      // Keep a nearby route association only as package metadata.
+      const RouteLegHit nearby_leg =
+          FindNearestRouteLeg(m_cursor_lat, m_cursor_lon, 0.50);
+      if (nearby_leg.found) {
+        hit.route_guid = nearby_leg.route_guid;
+        hit.route_name = nearby_leg.route_name;
+      }
     }
+
     m_pending_start = hit;
     m_ebl_mode = EblMode::AwaitTarget;
+
     wxString start_name = hit.waypoint_name;
-    if (start_name.IsEmpty()) start_name = hit.is_mark ? _("Mark") : _("Waypoint");
-    if (hit.is_mark) {
-      SetStatus(_("Start selected: mark '") + start_name +
-                _("'. Now click the lighthouse, buoy, beacon or other sight mark."));
+    if (start_name.IsEmpty())
+      start_name = hit.is_mark ? _("Mark") : _("Waypoint");
+
+    if (!event.ShiftDown()) {
+      SetStatus(wxString::Format(
+          _("Start selected: exact free point %.5f, %.5f. "
+            "Now click the lighthouse, buoy, beacon or other sight mark."),
+          hit.lat, hit.lon));
+    } else if (hit.is_turn_anchor) {
+      const wxString anchor =
+          hit.turn_anchor_is_end ? _("TURN END") : _("TURN START / WO");
+      SetStatus(_("Snapped start: ") + start_name + _(" / ") + anchor +
+                _(". The start is fixed at this coordinate; it will not move if the TURN changes. Now click the sight mark."));
+    } else if (hit.is_mark) {
+      SetStatus(_("Snapped start: mark '") + start_name +
+                _("'. The start is fixed at this coordinate. Now click the sight mark."));
     } else {
       wxString route_name = hit.route_name;
       if (route_name.IsEmpty()) route_name = _("Unnamed route");
-      SetStatus(_("Start selected: ") + route_name + _(" / ") + start_name +
-                _(". Now click the lighthouse, buoy, beacon or other sight mark."));
+      SetStatus(_("Snapped start: ") + route_name + _(" / ") + start_name +
+                _(". The start is fixed at this coordinate. Now click the sight mark."));
     }
+
     if (m_parent_window) RequestRefresh(m_parent_window);
     return true;
   }
+
   if (m_ebl_mode == EblMode::AwaitTarget) {
     CompleteEblVrm(m_cursor_lat, m_cursor_lon);
     return true;
@@ -518,10 +614,60 @@ route_toolbar_pi::RouteWaypointHit route_toolbar_pi::FindNearestStandaloneMark(
   return best;
 }
 
+route_toolbar_pi::RouteWaypointHit route_toolbar_pi::FindNearestTurnAnchor(
+    double lat, double lon, double max_distance_nm) const {
+  RouteWaypointHit best;
+  best.distance_nm = std::numeric_limits<double>::max();
+
+  for (const RouteTurn& turn : m_turns) {
+    struct Candidate {
+      double lat;
+      double lon;
+      bool is_end;
+    };
+
+    const Candidate candidates[] = {
+        {turn.start_lat, turn.start_lon, false},
+        {turn.end_lat, turn.end_lon, true},
+    };
+
+    for (const Candidate& c : candidates) {
+      double distance_nm = 0.0;
+      DistanceBearingMercator_Plugin(
+          lat, lon, c.lat, c.lon, nullptr, &distance_nm);
+
+      if (distance_nm > max_distance_nm ||
+          distance_nm >= best.distance_nm)
+        continue;
+
+      best.found = true;
+      best.is_turn_anchor = true;
+      best.turn_anchor_is_end = c.is_end;
+      best.lat = c.lat;
+      best.lon = c.lon;
+      best.distance_nm = distance_nm;
+      best.route_guid = turn.route_guid;
+      best.route_name = turn.route_name;
+      best.waypoint_guid = turn.waypoint_guid;
+      best.waypoint_name = turn.waypoint_name;
+    }
+  }
+
+  return best;
+}
+
 route_toolbar_pi::RouteWaypointHit route_toolbar_pi::FindNearestEblStart(
     double lat, double lon, double max_distance_nm) const {
-  RouteWaypointHit route_wp = FindNearestRouteWaypoint(lat, lon, max_distance_nm);
-  RouteWaypointHit mark = FindNearestStandaloneMark(lat, lon, max_distance_nm);
+  // TURN START/END gets explicit priority when clicked closely.
+  RouteWaypointHit turn =
+      FindNearestTurnAnchor(lat, lon, kTurnAnchorPickRadiusNm);
+  if (turn.found) return turn;
+
+  RouteWaypointHit route_wp =
+      FindNearestRouteWaypoint(lat, lon, max_distance_nm);
+  RouteWaypointHit mark =
+      FindNearestStandaloneMark(lat, lon, max_distance_nm);
+
   if (!route_wp.found) return mark;
   if (!mark.found) return route_wp;
   return mark.distance_nm < route_wp.distance_nm ? mark : route_wp;
@@ -537,11 +683,45 @@ bool route_toolbar_pi::RefreshEblStartFromMark(RouteEblVrm& item) const {
   return true;
 }
 
+bool route_toolbar_pi::RefreshEblStartFromTurn(RouteEblVrm& item) const {
+  if (!item.start_is_turn ||
+      item.start_turn_route_guid.IsEmpty() ||
+      item.start_turn_waypoint_guid.IsEmpty())
+    return false;
+
+  for (const RouteTurn& turn : m_turns) {
+    if (turn.route_guid != item.start_turn_route_guid ||
+        turn.waypoint_guid != item.start_turn_waypoint_guid)
+      continue;
+
+    if (item.start_turn_end) {
+      item.start_lat = turn.end_lat;
+      item.start_lon = turn.end_lon;
+    } else {
+      item.start_lat = turn.start_lat;
+      item.start_lon = turn.start_lon;
+    }
+
+    if (!turn.waypoint_name.IsEmpty())
+      item.start_turn_waypoint_name = turn.waypoint_name;
+
+    // Keep the general route/waypoint identity aligned as well.
+    item.route_guid = turn.route_guid;
+    item.route_name = turn.route_name;
+    item.waypoint_guid = turn.waypoint_guid;
+    item.waypoint_name = turn.waypoint_name;
+    return true;
+  }
+
+  return false;
+}
+
 int route_toolbar_pi::FindNearestEblTarget(double lat, double lon,
                                            double max_distance_nm) const {
   int best_index = -1;
   double best_distance = std::numeric_limits<double>::max();
   for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
+    if (!m_ebl_vrms[i].visible) continue;
 
     double distance_nm = 0.0;
     DistanceBearingMercator_Plugin(lat, lon, m_ebl_vrms[i].target_lat,
@@ -557,20 +737,23 @@ int route_toolbar_pi::FindNearestEblTarget(double lat, double lon,
 void route_toolbar_pi::ShowEblTargetActions(int index) {
   if (index < 0 || static_cast<size_t>(index) >= m_ebl_vrms.size()) return;
   const RouteEblVrm& item = m_ebl_vrms[static_cast<size_t>(index)];
-  wxArrayString choices;
-  choices.Add(_("Move target"));
-  choices.Add(_("Move label"));
-  choices.Add(_("Reset label position"));
-  choices.Add(_("Rename"));
-  choices.Add(_("Delete"));
-  wxString target_name = item.target_name;
-  if (target_name.IsEmpty()) target_name = _("Unnamed sight mark");
-  wxSingleChoiceDialog dialog(
+  wxString name = item.target_name;
+  if (name.IsEmpty()) name = _("Unnamed sight mark");
+
+  wxArrayString actions;
+  actions.Add(_("Move target"));
+  actions.Add(_("Move label"));
+  actions.Add(_("Reset label position"));
+  actions.Add(_("Rename"));
+  actions.Add(_("Delete EBL/VRM"));
+
+  const int selected = ShowRouteToolbarActionButtons(
       m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
-      _("What do you want to do with ") + target_name + _("?"),
-      _("Route EBL / VRM"), choices);
-  if (dialog.ShowModal() != wxID_OK) return;
-  switch (dialog.GetSelection()) {
+      _("Route EBL / VRM"),
+      _("What do you want to do with ") + name + _("?"),
+      actions);
+
+  switch (selected) {
     case 0: BeginMoveEblTarget(index); break;
     case 1: BeginMoveEblLabel(index); break;
     case 2: ResetEblLabel(index); break;
@@ -707,21 +890,65 @@ void route_toolbar_pi::RenameEblTarget(int index) {
 
 void route_toolbar_pi::DeleteEblTarget(int index) {
   if (index < 0 || static_cast<size_t>(index) >= m_ebl_vrms.size()) return;
-  const wxString name = m_ebl_vrms[static_cast<size_t>(index)].target_name;
-  wxMessageDialog confirm(m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
-                          _("Delete Route EBL/VRM target '") + name + _("'?"),
-                          _("Route EBL / VRM"), wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
-  if (confirm.ShowModal() != wxID_YES) return;
-  m_ebl_vrms.erase(m_ebl_vrms.begin() + index);
+
+  const RouteEblVrm selected = m_ebl_vrms[static_cast<size_t>(index)];
+  wxString name = selected.target_name;
+  if (name.IsEmpty()) name = _("Unnamed sight mark");
+
+  size_t same_target_count = 0;
+  for (const RouteEblVrm& item : m_ebl_vrms) {
+    if (std::fabs(item.target_lat - selected.target_lat) < 1e-7 &&
+        std::fabs(item.target_lon - selected.target_lon) < 1e-7 &&
+        item.target_name == selected.target_name)
+      ++same_target_count;
+  }
+
+  bool delete_all = false;
+  if (same_target_count > 1) {
+    wxMessageDialog choice(
+        m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
+        wxString::Format(
+            _("%lu EBL/VRM objects use '%s' at the same target position."),
+            static_cast<unsigned long>(same_target_count), name),
+        _("Delete EBL/VRM"),
+        wxYES_NO | wxCANCEL | wxICON_QUESTION);
+    choice.SetYesNoLabels(_("Delete all"), _("Delete selected only"));
+    const int answer = choice.ShowModal();
+    if (answer == wxID_CANCEL) return;
+    delete_all = answer == wxID_YES;
+  } else {
+    wxMessageDialog confirm(
+        m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
+        _("Delete Route EBL/VRM target '") + name + _("'?"),
+        _("Route EBL / VRM"),
+        wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+    if (confirm.ShowModal() != wxID_YES) return;
+  }
+
+  if (delete_all) {
+    m_ebl_vrms.erase(
+        std::remove_if(
+            m_ebl_vrms.begin(), m_ebl_vrms.end(),
+            [&](const RouteEblVrm& item) {
+              return std::fabs(item.target_lat - selected.target_lat) < 1e-7 &&
+                     std::fabs(item.target_lon - selected.target_lon) < 1e-7 &&
+                     item.target_name == selected.target_name;
+            }),
+        m_ebl_vrms.end());
+  } else {
+    m_ebl_vrms.erase(m_ebl_vrms.begin() + index);
+  }
+
   m_edit_item_index = -1;
   m_ebl_mode = EblMode::Idle;
   SavePersistentState();
-  SetStatus(_("Route EBL/VRM target deleted."));
+  SetStatus(_("Route EBL/VRM deleted."));
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
 void route_toolbar_pi::RecalculateEbl(RouteEblVrm& item) const {
-  RefreshEblStartFromMark(item);
+  // EBL/VRM starts are static coordinates. Metadata may remember that the
+  // point was Shift-snapped to a Mark/WP/TURN, but it is never live-linked.
   DistanceBearingMercator_Plugin(item.target_lat, item.target_lon,
                                  item.start_lat, item.start_lon,
                                  &item.bearing_true, &item.range_nm);
@@ -741,14 +968,25 @@ void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
   item.target_lon = target_lon;
   item.arc_width_deg = kDefaultArcWidthDeg;
   item.start_is_mark = m_pending_start.is_mark;
+  item.start_is_turn = m_pending_start.is_turn_anchor;
+  item.start_turn_end = m_pending_start.turn_anchor_is_end;
+  item.start_is_free = m_pending_start.is_free_point;
+
   if (item.start_is_mark) {
     item.start_mark_guid = m_pending_start.waypoint_guid;
     item.start_mark_name = m_pending_start.waypoint_name;
   } else {
+    // Route association is retained for route-WP, TURN and nearby free starts.
     item.route_guid = m_pending_start.route_guid;
     item.route_name = m_pending_start.route_name;
     item.waypoint_guid = m_pending_start.waypoint_guid;
     item.waypoint_name = m_pending_start.waypoint_name;
+
+    if (item.start_is_turn) {
+      item.start_turn_route_guid = m_pending_start.route_guid;
+      item.start_turn_waypoint_guid = m_pending_start.waypoint_guid;
+      item.start_turn_waypoint_name = m_pending_start.waypoint_name;
+    }
   }
   RecalculateEbl(item);
   if (item.range_nm < 0.001) {
@@ -774,8 +1012,18 @@ void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
     }
   }
   SavePersistentState();
-  wxString start_name = item.start_is_mark ? item.start_mark_name : item.waypoint_name;
-  if (start_name.IsEmpty()) start_name = item.start_is_mark ? _("Mark") : _("Waypoint");
+  wxString start_name;
+  if (item.start_is_turn) {
+    start_name = item.start_turn_waypoint_name;
+    if (start_name.IsEmpty()) start_name = _("Waypoint");
+    start_name += item.start_turn_end ? _(" / TURN END (fixed)") : _(" / TURN START (fixed)");
+  } else if (item.start_is_free) {
+    start_name = _("Free point");
+  } else {
+    start_name = item.start_is_mark ? item.start_mark_name : item.waypoint_name;
+    if (start_name.IsEmpty())
+      start_name = item.start_is_mark ? _("Mark") : _("Waypoint");
+  }
   SetStatus(start_name + _(" → ") + item.target_name + _("  ") +
             wxString::Format(_("%03.0f°T  %.2f NM. Saved. Click another route waypoint/mark, click an existing target to edit, or right-click to finish."),
                              item.bearing_true, item.range_nm));
@@ -787,6 +1035,7 @@ void route_toolbar_pi::CompleteEblVrm(double target_lat, double target_lon) {
 void route_toolbar_pi::LoadPersistentState() {
   m_ebl_vrms.clear();
   m_pils.clear();
+  m_turns.clear();
   wxFileConfig* config = GetOCPNConfigObject();
   if (!config) return;
   const wxString old_path = config->GetPath();
@@ -805,6 +1054,11 @@ void route_toolbar_pi::LoadPersistentState() {
     wxColour parsed;
     if (parsed.Set(colour_text)) m_pil_colour = parsed;
   }
+  colour_text.clear();
+  if (config->Read("TurnColour", &colour_text) && !colour_text.IsEmpty()) {
+    wxColour parsed;
+    if (parsed.Set(colour_text)) m_turn_colour = parsed;
+  }
   config->SetPath("EBLVRM");
   long count = 0;
   config->Read("Count", &count, 0L);
@@ -817,6 +1071,7 @@ void route_toolbar_pi::LoadPersistentState() {
     const bool have_target_lat = config->Read(prefix + "TargetLat", &item.target_lat);
     const bool have_target_lon = config->Read(prefix + "TargetLon", &item.target_lon);
     if (!(have_start_lat && have_start_lon && have_target_lat && have_target_lon)) continue;
+    config->Read(prefix + "Visible", &item.visible, true);
     config->Read(prefix + "ArcWidthDeg", &item.arc_width_deg, kDefaultArcWidthDeg);
     config->Read(prefix + "RouteGuid", &item.route_guid, wxEmptyString);
     config->Read(prefix + "RouteName", &item.route_name, wxEmptyString);
@@ -825,6 +1080,15 @@ void route_toolbar_pi::LoadPersistentState() {
     config->Read(prefix + "StartIsMark", &item.start_is_mark, false);
     config->Read(prefix + "StartMarkGuid", &item.start_mark_guid, wxEmptyString);
     config->Read(prefix + "StartMarkName", &item.start_mark_name, wxEmptyString);
+    config->Read(prefix + "StartIsTurn", &item.start_is_turn, false);
+    config->Read(prefix + "StartTurnEnd", &item.start_turn_end, false);
+    config->Read(prefix + "StartIsFree", &item.start_is_free, false);
+    config->Read(prefix + "StartTurnRouteGuid",
+                 &item.start_turn_route_guid, wxEmptyString);
+    config->Read(prefix + "StartTurnWaypointGuid",
+                 &item.start_turn_waypoint_guid, wxEmptyString);
+    config->Read(prefix + "StartTurnWaypointName",
+                 &item.start_turn_waypoint_name, wxEmptyString);
     config->Read(prefix + "TargetName", &item.target_name, wxEmptyString);
     config->Read(prefix + "LabelManual", &item.label_manual, false);
 
@@ -851,6 +1115,7 @@ void route_toolbar_pi::LoadPersistentState() {
     if (item.range_nm >= 0.001) m_ebl_vrms.push_back(item);
   }
   LoadPilPersistentState(config);
+  LoadTurnPersistentState(config);
   config->SetPath(old_path);
 }
 
@@ -862,6 +1127,7 @@ void route_toolbar_pi::SavePersistentState() const {
   config->Write("LabelFontSize", static_cast<long>(m_label_font_size));
   config->Write("EblColour", m_ebl_colour.GetAsString(wxC2S_HTML_SYNTAX));
   config->Write("PilColour", m_pil_colour.GetAsString(wxC2S_HTML_SYNTAX));
+  config->Write("TurnColour", m_turn_colour.GetAsString(wxC2S_HTML_SYNTAX));
   config->DeleteGroup("EBLVRM");
   config->SetPath("EBLVRM");
   config->Write("Count", static_cast<long>(m_ebl_vrms.size()));
@@ -869,6 +1135,7 @@ void route_toolbar_pi::SavePersistentState() const {
 
     const wxString prefix = wxString::Format("Item%03lu/", static_cast<unsigned long>(i));
     const RouteEblVrm& item = m_ebl_vrms[i];
+    config->Write(prefix + "Visible", item.visible);
     config->Write(prefix + "StartLat", item.start_lat);
     config->Write(prefix + "StartLon", item.start_lon);
     config->Write(prefix + "TargetLat", item.target_lat);
@@ -881,6 +1148,12 @@ void route_toolbar_pi::SavePersistentState() const {
     config->Write(prefix + "StartIsMark", item.start_is_mark);
     config->Write(prefix + "StartMarkGuid", item.start_mark_guid);
     config->Write(prefix + "StartMarkName", item.start_mark_name);
+    config->Write(prefix + "StartIsTurn", item.start_is_turn);
+    config->Write(prefix + "StartTurnEnd", item.start_turn_end);
+    config->Write(prefix + "StartIsFree", item.start_is_free);
+    config->Write(prefix + "StartTurnRouteGuid", item.start_turn_route_guid);
+    config->Write(prefix + "StartTurnWaypointGuid", item.start_turn_waypoint_guid);
+    config->Write(prefix + "StartTurnWaypointName", item.start_turn_waypoint_name);
     config->Write(prefix + "TargetName", item.target_name);
     config->Write(prefix + "LabelManual", item.label_manual);
     config->Write(prefix + "LabelDxPx",
@@ -889,6 +1162,7 @@ void route_toolbar_pi::SavePersistentState() const {
                   static_cast<long>(item.label_dy_px));
   }
   SavePilPersistentState(config);
+  SaveTurnPersistentState(config);
   config->SetPath(old_path);
   config->Flush();
 }
@@ -896,7 +1170,13 @@ void route_toolbar_pi::SavePersistentState() const {
 bool route_toolbar_pi::RenderOverlay(wxDC& dc, PlugIn_ViewPort* vp) {
   if (!vp || !vp->bValid) return false;
   bool rendered = false;
+  for (const RouteTurn& turn : m_turns) {
+    if (!turn.visible) continue;
+    DrawTurn(dc, vp, turn);
+    rendered = true;
+  }
   for (size_t i = 0; i < m_pils.size(); ++i) {
+    if (!m_pils[i].visible) continue;
     if (m_pil_mode == PilMode::AwaitOffsetPoint && m_edit_pil_index >= 0 &&
         static_cast<int>(i) == m_edit_pil_index) continue;
     DrawPil(dc, vp, m_pils[i], false);
@@ -910,6 +1190,7 @@ bool route_toolbar_pi::RenderOverlay(wxDC& dc, PlugIn_ViewPort* vp) {
     }
   }
   for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
+    if (!m_ebl_vrms[i].visible) continue;
     if (m_ebl_mode == EblMode::MoveExistingLabel &&
         static_cast<int>(i) == m_edit_item_index &&
         m_has_cursor) {
@@ -936,7 +1217,6 @@ bool route_toolbar_pi::RenderOverlay(wxDC& dc, PlugIn_ViewPort* vp) {
     }
     if (m_ebl_mode == EblMode::MoveExistingTarget && static_cast<int>(i) == m_edit_item_index)
       continue;
-    if (m_ebl_vrms[i].start_is_mark) RecalculateEbl(m_ebl_vrms[i]);
     DrawEblVrm(dc, vp, m_ebl_vrms[i], false);
     rendered = true;
   }
@@ -990,7 +1270,14 @@ bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+  for (const RouteTurn& turn : m_turns) {
+    if (!turn.visible) continue;
+    DrawTurnGL(vp, turn);
+    rendered = true;
+  }
+
   for (size_t i = 0; i < m_pils.size(); ++i) {
+    if (!m_pils[i].visible) continue;
     if (m_pil_mode == PilMode::AwaitOffsetPoint && m_edit_pil_index >= 0 &&
         static_cast<int>(i) == m_edit_pil_index) continue;
     DrawPilGL(vp, m_pils[i], false);
@@ -1004,6 +1291,7 @@ bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
     }
   }
   for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
+    if (!m_ebl_vrms[i].visible) continue;
     if (m_ebl_mode == EblMode::MoveExistingLabel &&
         static_cast<int>(i) == m_edit_item_index &&
         m_has_cursor) {
@@ -1030,7 +1318,6 @@ bool route_toolbar_pi::RenderGLOverlay(wxGLContext*, PlugIn_ViewPort* vp) {
     }
     if (m_ebl_mode == EblMode::MoveExistingTarget && static_cast<int>(i) == m_edit_item_index)
       continue;
-    if (m_ebl_vrms[i].start_is_mark) RecalculateEbl(m_ebl_vrms[i]);
     DrawEblVrmGL(vp, m_ebl_vrms[i], false);
     rendered = true;
   }
@@ -1550,6 +1837,225 @@ double route_toolbar_pi::NormalizeBearing(double bearing) {
   if (bearing < 0.0) bearing += 360.0;
   return bearing;
 }
+
+
+void route_toolbar_pi::ShowObjectManager() {
+  wxDialog dialog(
+      m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
+      wxID_ANY, _("Route Objects"), wxDefaultPosition, wxSize(860, 470),
+      wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER | wxSTAY_ON_TOP);
+
+  auto* top = new wxBoxSizer(wxVERTICAL);
+  auto* intro = new wxStaticText(
+      &dialog, wxID_ANY,
+      _("Route Toolbar objects. Hide/show changes only the chart overlay; "
+        "the objects remain saved and are still included in GPX/report data."));
+  intro->Wrap(820);
+  top->Add(intro, 0, wxEXPAND | wxALL, 10);
+
+  auto* list = new wxListCtrl(
+      &dialog, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+      wxLC_REPORT | wxLC_SINGLE_SEL | wxBORDER_SUNKEN);
+  list->AppendColumn(_("Shown"), wxLIST_FORMAT_LEFT, 70);
+  list->AppendColumn(_("Type"), wxLIST_FORMAT_LEFT, 90);
+  list->AppendColumn(_("Route / start"), wxLIST_FORMAT_LEFT, 180);
+  list->AppendColumn(_("Target / waypoint"), wxLIST_FORMAT_LEFT, 190);
+  list->AppendColumn(_("Details"), wxLIST_FORMAT_LEFT, 270);
+  top->Add(list, 1, wxEXPAND | wxLEFT | wxRIGHT, 10);
+
+  auto populate = [&]() {
+    list->DeleteAllItems();
+
+    for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
+      const RouteEblVrm& item = m_ebl_vrms[i];
+
+      wxString start;
+      if (item.start_is_turn) {
+        start = item.start_turn_waypoint_name;
+        if (start.IsEmpty()) start = _("WP");
+        start += item.start_turn_end ? _(" / TURN END snap") : _(" / WO snap");
+      } else if (item.start_is_free) {
+        start = _("Free point");
+      } else if (item.start_is_mark) {
+        start = item.start_mark_name.IsEmpty() ? _("Mark snap") : item.start_mark_name;
+      } else {
+        start = item.waypoint_name.IsEmpty() ? _("Waypoint snap") : item.waypoint_name;
+      }
+
+      const long row =
+          list->InsertItem(list->GetItemCount(), item.visible ? _("Yes") : _("No"));
+      list->SetItem(row, 1, _("EBL/VRM"));
+      list->SetItem(row, 2, start);
+      list->SetItem(row, 3, item.target_name);
+      list->SetItem(row, 4,
+                    wxString::Format("%03.0f°T · %.2f NM",
+                                     item.bearing_true, item.range_nm));
+      list->SetItemData(row, 1000000L + static_cast<long>(i));
+    }
+
+    for (size_t i = 0; i < m_pils.size(); ++i) {
+      const RoutePil& item = m_pils[i];
+      const long row =
+          list->InsertItem(list->GetItemCount(), item.visible ? _("Yes") : _("No"));
+      list->SetItem(row, 1, _("PIL"));
+      list->SetItem(row, 2, item.route_name);
+      list->SetItem(row, 3, item.from_name + _(" → ") + item.to_name);
+      list->SetItem(row, 4,
+                    wxString::Format("%+.2f NM %s",
+                                     item.offset_nm,
+                                     item.offset_nm >= 0.0 ? _("Stbd") : _("Port")));
+      list->SetItemData(row, 2000000L + static_cast<long>(i));
+    }
+
+    for (size_t i = 0; i < m_turns.size(); ++i) {
+      const RouteTurn& item = m_turns[i];
+      const long row =
+          list->InsertItem(list->GetItemCount(), item.visible ? _("Yes") : _("No"));
+      list->SetItem(row, 1, _("TURN"));
+      list->SetItem(row, 2, item.route_name);
+      list->SetItem(row, 3, item.waypoint_name);
+
+      wxString details =
+          wxString::Format("ΔK %.0f° %s · R %.2f NM",
+                           std::fabs(item.turn_angle_deg),
+                           item.turn_angle_deg >= 0.0 ? _("SB") : _("BB"),
+                           item.radius_nm);
+      if (item.rudder_angle_deg > 0.0)
+        details += wxString::Format(" · Rudder %.0f° %s",
+                                    item.rudder_angle_deg,
+                                    item.turn_angle_deg >= 0.0 ? _("SB") : _("BB"));
+
+      list->SetItem(row, 4, details);
+      list->SetItemData(row, 3000000L + static_cast<long>(i));
+    }
+  };
+
+  auto set_selected_visibility = [&](bool visible) {
+    const long row =
+        list->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+    if (row < 0) return;
+
+    const long code = list->GetItemData(row);
+    const int type = static_cast<int>(code / 1000000L);
+    const size_t index = static_cast<size_t>(code % 1000000L);
+
+    if (type == 1 && index < m_ebl_vrms.size())
+      m_ebl_vrms[index].visible = visible;
+    else if (type == 2 && index < m_pils.size())
+      m_pils[index].visible = visible;
+    else if (type == 3 && index < m_turns.size())
+      m_turns[index].visible = visible;
+    else
+      return;
+
+    SavePersistentState();
+    populate();
+    if (m_parent_window) RequestRefresh(m_parent_window);
+  };
+
+  auto set_all_visibility = [&](bool visible) {
+    for (RouteEblVrm& item : m_ebl_vrms) item.visible = visible;
+    for (RoutePil& item : m_pils) item.visible = visible;
+    for (RouteTurn& item : m_turns) item.visible = visible;
+
+    SavePersistentState();
+    populate();
+    if (m_parent_window) RequestRefresh(m_parent_window);
+  };
+
+  auto* row1 = new wxBoxSizer(wxHORIZONTAL);
+  auto* show_selected = new wxButton(&dialog, wxID_ANY, _("Show selected"));
+  auto* hide_selected = new wxButton(&dialog, wxID_ANY, _("Hide selected"));
+  auto* show_all = new wxButton(&dialog, wxID_ANY, _("Show all"));
+  auto* hide_all = new wxButton(&dialog, wxID_ANY, _("Hide all"));
+
+  row1->Add(show_selected, 0, wxRIGHT, 6);
+  row1->Add(hide_selected, 0, wxRIGHT, 14);
+  row1->Add(show_all, 0, wxRIGHT, 6);
+  row1->Add(hide_all, 0);
+
+  top->Add(row1, 0, wxLEFT | wxRIGHT | wxTOP, 10);
+
+  auto* row2 = new wxBoxSizer(wxHORIZONTAL);
+  auto* del = new wxButton(&dialog, wxID_DELETE, _("Delete selected"));
+  auto* close = new wxButton(&dialog, wxID_CLOSE, _("Close"));
+  row2->Add(del, 0);
+  row2->AddStretchSpacer();
+  row2->Add(close, 0);
+  top->Add(row2, 0, wxEXPAND | wxALL, 10);
+
+  show_selected->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+    set_selected_visibility(true);
+  });
+  hide_selected->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+    set_selected_visibility(false);
+  });
+  show_all->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+    set_all_visibility(true);
+  });
+  hide_all->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+    set_all_visibility(false);
+  });
+
+  list->Bind(wxEVT_LIST_ITEM_ACTIVATED, [&](wxListEvent&) {
+    const long row =
+        list->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+    if (row < 0) return;
+
+    const long code = list->GetItemData(row);
+    const int type = static_cast<int>(code / 1000000L);
+    const size_t index = static_cast<size_t>(code % 1000000L);
+
+    bool current = true;
+    if (type == 1 && index < m_ebl_vrms.size())
+      current = m_ebl_vrms[index].visible;
+    else if (type == 2 && index < m_pils.size())
+      current = m_pils[index].visible;
+    else if (type == 3 && index < m_turns.size())
+      current = m_turns[index].visible;
+    else
+      return;
+
+    set_selected_visibility(!current);
+  });
+
+  del->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+    const long row =
+        list->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+    if (row < 0) return;
+
+    const long code = list->GetItemData(row);
+    const int type = static_cast<int>(code / 1000000L);
+    const size_t index = static_cast<size_t>(code % 1000000L);
+
+    if (wxMessageBox(_("Delete selected object?"), _("Route Objects"),
+                     wxYES_NO | wxNO_DEFAULT | wxICON_WARNING,
+                     &dialog) != wxYES)
+      return;
+
+    if (type == 1 && index < m_ebl_vrms.size())
+      m_ebl_vrms.erase(m_ebl_vrms.begin() + index);
+    else if (type == 2 && index < m_pils.size())
+      m_pils.erase(m_pils.begin() + index);
+    else if (type == 3 && index < m_turns.size())
+      m_turns.erase(m_turns.begin() + index);
+    else
+      return;
+
+    SavePersistentState();
+    populate();
+    if (m_parent_window) RequestRefresh(m_parent_window);
+  });
+
+  close->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+    dialog.EndModal(wxID_OK);
+  });
+
+  dialog.SetSizer(top);
+  dialog.CentreOnParent();
+  dialog.ShowModal();
+}
+
 
 void route_toolbar_pi::SetStatus(const wxString& text) {
   if (m_dialog) m_dialog->SetStatus(text);

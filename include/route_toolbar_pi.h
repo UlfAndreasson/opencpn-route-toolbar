@@ -46,6 +46,8 @@ public:
 
   void BeginEblVrm();
   void BeginPil();
+  void BeginTurn();
+  void ShowObjectManager();
   void ExportRouteReport();
   void RouteGpx();
   void ExportRouteGpxPackage();
@@ -62,6 +64,7 @@ public:
 
   const wxColour& GetEblColour() const { return m_ebl_colour; }
   const wxColour& GetPilColour() const { return m_pil_colour; }
+  const wxColour& GetTurnColour() const { return m_turn_colour; }
   void SetEblColour(const wxColour& colour) {
     if (!colour.IsOk()) return;
     m_ebl_colour = colour;
@@ -74,11 +77,20 @@ public:
     SavePersistentState();
     if (m_parent_window) RequestRefresh(m_parent_window);
   }
+  void SetTurnColour(const wxColour& colour) {
+    if (!colour.IsOk()) return;
+    m_turn_colour = colour;
+    SavePersistentState();
+    if (m_parent_window) RequestRefresh(m_parent_window);
+  }
 
 private:
   struct RouteWaypointHit {
     bool found{false};
     bool is_mark{false};
+    bool is_turn_anchor{false};
+    bool turn_anchor_is_end{false};
+    bool is_free_point{false};
     double lat{0.0};
     double lon{0.0};
     double distance_nm{0.0};
@@ -89,6 +101,7 @@ private:
   };
 
   struct RouteEblVrm {
+    bool visible{true};
     double start_lat{0.0};
     double start_lon{0.0};
     double target_lat{0.0};
@@ -103,6 +116,17 @@ private:
     bool start_is_mark{false};
     wxString start_mark_guid;
     wxString start_mark_name;
+
+    // Additional EBL start types introduced with Route TURN.
+    // TURN anchors remain linked to the route waypoint, so changing
+    // the turn radius automatically moves the EBL start.
+    bool start_is_turn{false};
+    bool start_turn_end{false};
+    bool start_is_free{false};
+    wxString start_turn_route_guid;
+    wxString start_turn_waypoint_guid;
+    wxString start_turn_waypoint_name;
+
     wxString target_name;
 
     // Label position relative to the target in screen pixels.
@@ -131,6 +155,7 @@ private:
   };
 
   struct RoutePil {
+    bool visible{true};
     double leg_start_lat{0.0};
     double leg_start_lon{0.0};
     double leg_end_lat{0.0};
@@ -153,6 +178,34 @@ private:
     wxString to_name;
   };
 
+  struct RouteTurn {
+    bool visible{true};
+    double rudder_angle_deg{0.0};  // manual planned magnitude; side follows turn
+    double waypoint_lat{0.0};
+    double waypoint_lon{0.0};
+    double start_lat{0.0};
+    double start_lon{0.0};
+    double end_lat{0.0};
+    double end_lon{0.0};
+    double center_lat{0.0};
+    double center_lon{0.0};
+    double inbound_course_true{0.0};
+    double outbound_course_true{0.0};
+    double inbound_leg_nm{0.0};
+    double outbound_leg_nm{0.0};
+    double turn_angle_deg{0.0};
+    double radius_nm{0.10};
+    double tangent_nm{0.0};
+    wxString route_guid;
+    wxString route_name;
+    wxString waypoint_guid;
+    wxString waypoint_name;
+    wxString prev_guid;
+    wxString prev_name;
+    wxString next_guid;
+    wxString next_name;
+  };
+
   enum class EblMode {
     Idle,
     AwaitRoutePoint,
@@ -168,6 +221,11 @@ private:
     MoveExistingAnchor,
   };
 
+  enum class TurnMode {
+    Idle,
+    AwaitWaypoint,
+  };
+
   void ShowToolWindow();
   void HideToolWindow();
   void SetStatus(const wxString& text);
@@ -180,7 +238,10 @@ private:
                                              double max_distance_nm) const;
   RouteWaypointHit FindNearestEblStart(double lat, double lon,
                                        double max_distance_nm) const;
+  RouteWaypointHit FindNearestTurnAnchor(double lat, double lon,
+                                         double max_distance_nm) const;
   bool RefreshEblStartFromMark(RouteEblVrm& item) const;
+  bool RefreshEblStartFromTurn(RouteEblVrm& item) const;
   int FindNearestEblTarget(double lat, double lon,
                            double max_distance_nm) const;
   void ShowEblTargetActions(int index);
@@ -211,6 +272,24 @@ private:
                  bool preview) const;
   void LoadPilPersistentState(wxFileConfig* config);
   void SavePilPersistentState(wxFileConfig* config) const;
+
+  RouteWaypointHit FindNearestInteriorRouteWaypoint(
+      double lat, double lon, double max_distance_nm) const;
+  bool BuildTurnFromRoute(const wxString& route_guid,
+                          const wxString& waypoint_guid,
+                          double radius_nm,
+                          RouteTurn& item,
+                          wxString* error) const;
+  int FindTurnByWaypoint(const wxString& route_guid,
+                         const wxString& waypoint_guid) const;
+  void CreateOrEditTurn(const RouteWaypointHit& hit);
+  void DeleteTurn(int index);
+  void DrawTurn(wxDC& dc, PlugIn_ViewPort* vp,
+                const RouteTurn& item) const;
+  void DrawTurnGL(PlugIn_ViewPort* vp,
+                  const RouteTurn& item) const;
+  void LoadTurnPersistentState(wxFileConfig* config);
+  void SaveTurnPersistentState(wxFileConfig* config) const;
 
   void LoadPersistentState();
   void SavePersistentState() const;
@@ -252,10 +331,15 @@ private:
   std::vector<RoutePil> m_pils;
   int m_edit_pil_index{-1};
 
+  TurnMode m_turn_mode{TurnMode::Idle};
+  std::vector<RouteTurn> m_turns;
+  double m_default_turn_radius_nm{0.10};
+
   wxTimer* m_delayed_state_load{nullptr};
   int m_label_font_size{14};
   wxColour m_ebl_colour{210, 0, 220};
   wxColour m_pil_colour{0, 105, 125};
+  wxColour m_turn_colour{255, 125, 0};
   double m_cursor_lat{0.0};
   double m_cursor_lon{0.0};
   bool m_has_cursor{false};

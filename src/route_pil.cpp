@@ -59,6 +59,7 @@ wxString PilLabel(double offset_nm) {
 
 void route_toolbar_pi::BeginPil() {
   if (!m_dialog_visible) ShowToolWindow();
+  m_turn_mode = TurnMode::Idle;
   m_ebl_mode = EblMode::Idle;
   m_pending_start = RouteWaypointHit{};
   m_edit_item_index = -1;
@@ -388,6 +389,8 @@ void route_toolbar_pi::LoadPilPersistentState(wxFileConfig* config) {
         !config->Read(prefix + "AnchorLon", &item.anchor_lon))
       continue;
 
+    config->Read(prefix + "Visible", &item.visible, true);
+
     long leg_index = 0;
     config->Read(prefix + "LegIndex", &leg_index, 0L);
     item.leg_index = static_cast<int>(leg_index);
@@ -417,8 +420,10 @@ void route_toolbar_pi::LoadPilPersistentState(wxFileConfig* config) {
     leg.course_true = NormalizeBearing(leg.course_true);
 
     RoutePil rebuilt;
-    if (BuildPilFromAnchor(leg, item.anchor_lat, item.anchor_lon, rebuilt))
+    if (BuildPilFromAnchor(leg, item.anchor_lat, item.anchor_lon, rebuilt)) {
+      rebuilt.visible = item.visible;
       m_pils.push_back(rebuilt);
+    }
   }
 }
 
@@ -434,6 +439,7 @@ void route_toolbar_pi::SavePilPersistentState(wxFileConfig* config) const {
     const wxString prefix = wxString::Format(
         "Item%03lu/", static_cast<unsigned long>(i));
     const RoutePil& item = m_pils[i];
+    config->Write(prefix + "Visible", item.visible);
     config->Write(prefix + "LegStartLat", item.leg_start_lat);
     config->Write(prefix + "LegStartLon", item.leg_start_lon);
     config->Write(prefix + "LegEndLat", item.leg_end_lat);
