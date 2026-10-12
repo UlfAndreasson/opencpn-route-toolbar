@@ -16,40 +16,15 @@
 #include <GL/gl.h>
 #endif
 
-namespace {
-wxColour GpxRouteColour(const wxString& name, const wxColour& fallback) {
-  struct NamedColour {
-    const char* name;
-    unsigned char r;
-    unsigned char g;
-    unsigned char b;
-  };
-  static const NamedColour colours[] = {
-      {"Black", 0x00, 0x00, 0x00},       {"DarkRed", 0x60, 0x00, 0x00},
-      {"DarkGreen", 0x00, 0x60, 0x00},   {"DarkYellow", 0x80, 0x80, 0x00},
-      {"DarkBlue", 0x00, 0x00, 0x60},    {"DarkMagenta", 0x60, 0x00, 0x60},
-      {"DarkCyan", 0x00, 0x80, 0x80},    {"LightGray", 0xC0, 0xC0, 0xC0},
-      {"DarkGray", 0x60, 0x60, 0x60},    {"Red", 0xFF, 0x00, 0x00},
-      {"Green", 0x00, 0xFF, 0x00},       {"Yellow", 0xF0, 0xF0, 0x00},
-      {"Blue", 0x00, 0x00, 0xFF},        {"Magenta", 0xFE, 0x00, 0xFE},
-      {"Cyan", 0x00, 0xFF, 0xFF},        {"White", 0xFF, 0xFF, 0xFF},
-  };
-  for (const auto& c : colours) {
-    if (name.CmpNoCase(wxString::FromUTF8(c.name)) == 0)
-      return wxColour(c.r, c.g, c.b);
-  }
-  return fallback;
-}
-}  // namespace
-
-wxColour route_toolbar_pi::ResolveRouteColour(const wxString& route_guid) const {
-  wxColour fallback(0, 105, 255);
+wxColour route_toolbar_pi::ResolveRouteColour(const wxString&) const {
+  // OpenCPN API 1.21 does not expose the route's optional GPXX display colour
+  // through PlugIn_Route / PlugIn_Route_Ex. Use OpenCPN's current route display
+  // colour so labels follow the normal/default route rendering and adapt to the
+  // active colour scheme.
+  wxColour colour(0, 105, 255);
   wxColour global;
-  if (GetGlobalColor("UINFB", &global) && global.IsOk()) fallback = global;
-
-  auto route_ex = GetRouteEx_Plugin(route_guid);
-  if (!route_ex || route_ex->m_Colour.IsEmpty()) return fallback;
-  return GpxRouteColour(route_ex->m_Colour, fallback);
+  if (GetGlobalColor("UINFB", &global) && global.IsOk()) colour = global;
+  return colour;
 }
 
 void route_toolbar_pi::DrawRouteLegLabels(wxDC& dc, PlugIn_ViewPort* vp) const {
