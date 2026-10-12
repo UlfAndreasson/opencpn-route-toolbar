@@ -553,8 +553,13 @@ void route_toolbar_pi::ExportRouteGpxPackage() {
       "pilColour",
       ColourText(m_pil_colour));
 
+  settings->AddAttribute(
+      "turnColour",
+      ColourText(m_turn_colour));
+
   size_t ebl_count = 0;
   size_t pil_count = 0;
+  size_t turn_count = 0;
 
   for (const RouteEblVrm& item :
        m_ebl_vrms) {
@@ -572,6 +577,10 @@ void route_toolbar_pi::ExportRouteGpxPackage() {
         AddElement(
             toolbar,
             "rt:ebl-vrm");
+
+    ebl->AddAttribute(
+        "visible",
+        item.visible ? "1" : "0");
 
     ebl->AddAttribute(
         "startLat",
@@ -635,6 +644,30 @@ void route_toolbar_pi::ExportRouteGpxPackage() {
         item.start_mark_name);
 
     ebl->AddAttribute(
+        "startIsTurn",
+        item.start_is_turn ? "1" : "0");
+
+    ebl->AddAttribute(
+        "startTurnEnd",
+        item.start_turn_end ? "1" : "0");
+
+    ebl->AddAttribute(
+        "startIsFree",
+        item.start_is_free ? "1" : "0");
+
+    ebl->AddAttribute(
+        "startTurnRouteGuid",
+        item.start_turn_route_guid);
+
+    ebl->AddAttribute(
+        "startTurnWaypointGuid",
+        item.start_turn_waypoint_guid);
+
+    ebl->AddAttribute(
+        "startTurnWaypointName",
+        item.start_turn_waypoint_name);
+
+    ebl->AddAttribute(
         "targetName",
         item.target_name);
 
@@ -659,6 +692,36 @@ void route_toolbar_pi::ExportRouteGpxPackage() {
     ++ebl_count;
   }
 
+  for (const RouteTurn& item :
+       m_turns) {
+    const bool same_route =
+        item.route_guid == route_guid ||
+        (item.route_guid.IsEmpty() &&
+         item.route_name == route_name);
+
+    if (!same_route)
+      continue;
+
+    auto* turn =
+        AddElement(toolbar, "rt:turn");
+
+    turn->AddAttribute("visible", item.visible ? "1" : "0");
+    turn->AddAttribute("rudderAngleDeg", DoubleText(item.rudder_angle_deg, 3));
+    turn->AddAttribute("routeGuid", item.route_guid);
+    turn->AddAttribute("routeName", item.route_name);
+    turn->AddAttribute("waypointGuid", item.waypoint_guid);
+    turn->AddAttribute("waypointName", item.waypoint_name);
+    turn->AddAttribute("radiusNm", DoubleText(item.radius_nm, 6));
+    turn->AddAttribute("turnAngleDeg", DoubleText(item.turn_angle_deg, 6));
+    turn->AddAttribute("tangentNm", DoubleText(item.tangent_nm, 6));
+    turn->AddAttribute("startLat", DoubleText(item.start_lat));
+    turn->AddAttribute("startLon", DoubleText(item.start_lon));
+    turn->AddAttribute("endLat", DoubleText(item.end_lat));
+    turn->AddAttribute("endLon", DoubleText(item.end_lon));
+
+    ++turn_count;
+  }
+
   for (const RoutePil& item :
        m_pils) {
     const bool same_route =
@@ -673,6 +736,10 @@ void route_toolbar_pi::ExportRouteGpxPackage() {
         AddElement(
             toolbar,
             "rt:pil");
+
+    pil->AddAttribute(
+        "visible",
+        item.visible ? "1" : "0");
 
     pil->AddAttribute(
         "routeGuid",
@@ -787,11 +854,13 @@ void route_toolbar_pi::ExportRouteGpxPackage() {
 
   SetStatus(
       wxString::Format(
-          _("GPX package saved: %lu EBL/VRM, %lu PIL."),
+          _("GPX package saved: %lu EBL/VRM, %lu PIL, %lu TURN."),
           static_cast<unsigned long>(
               ebl_count),
           static_cast<unsigned long>(
-              pil_count)));
+              pil_count),
+          static_cast<unsigned long>(
+              turn_count)));
 }
 
 
@@ -1175,10 +1244,24 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
                           route_name);
             }),
         m_pils.end());
+
+    m_turns.erase(
+        std::remove_if(
+            m_turns.begin(),
+            m_turns.end(),
+            [&](const RouteTurn& item) {
+              return item.route_guid ==
+                         old_route_guid ||
+                     (item.route_guid.IsEmpty() &&
+                      item.route_name ==
+                          route_name);
+            }),
+        m_turns.end());
   }
 
   size_t ebl_count = 0;
   size_t pil_count = 0;
+  size_t turn_count = 0;
 
   // ----------------------------------------------------------
   // Restore settings and Route Toolbar objects.
@@ -1216,6 +1299,15 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
       if (imported_pil.IsOk())
         m_pil_colour =
             imported_pil;
+
+      wxColour imported_turn(
+          settings->GetAttribute(
+              "turnColour",
+              wxEmptyString));
+
+      if (imported_turn.IsOk())
+        m_turn_colour =
+            imported_turn;
     }
 
     for (wxXmlNode* node =
@@ -1227,6 +1319,9 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
 
       if (type == "ebl-vrm") {
         RouteEblVrm item;
+
+        item.visible =
+            AttrBool(node, "visible", true);
 
         item.start_lat =
             AttrDouble(
@@ -1285,6 +1380,30 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
                 "startMarkName",
                 wxEmptyString);
 
+        item.start_is_turn =
+            AttrBool(node, "startIsTurn");
+
+        item.start_turn_end =
+            AttrBool(node, "startTurnEnd");
+
+        item.start_is_free =
+            AttrBool(node, "startIsFree");
+
+        item.start_turn_route_guid =
+            node->GetAttribute(
+                "startTurnRouteGuid",
+                wxEmptyString);
+
+        item.start_turn_waypoint_guid =
+            node->GetAttribute(
+                "startTurnWaypointGuid",
+                wxEmptyString);
+
+        item.start_turn_waypoint_name =
+            node->GetAttribute(
+                "startTurnWaypointName",
+                wxEmptyString);
+
         item.target_name =
             node->GetAttribute(
                 "targetName",
@@ -1326,25 +1445,26 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
             item.waypoint_guid =
                 mapped->second;
 
-          // Snap the imported EBL/VRM start to the exact
-          // OpenCPN waypoint position rather than retaining
-          // the older rounded startLat/startLon from GPX.
-          if (!item.waypoint_guid.IsEmpty()) {
-            PlugIn_Waypoint imported_start;
+          // Preserve the exact stored EBL/VRM start coordinate.
+          // Route/WP identity is metadata only and does not move the start.
+        }
 
-            if (GetSingleWaypoint(
-                    item.waypoint_guid,
-                    &imported_start)) {
-              item.start_lat =
-                  imported_start.m_lat;
-              item.start_lon =
-                  imported_start.m_lon;
+        if (item.start_is_turn) {
+          if (item.start_turn_route_guid == old_route_guid ||
+              item.start_turn_route_guid.IsEmpty())
+            item.start_turn_route_guid = new_route_guid;
 
-              if (!imported_start.m_MarkName.IsEmpty())
-                item.waypoint_name =
-                    imported_start.m_MarkName;
-            }
-          }
+          auto mapped_turn_wp =
+              waypoint_guid_map.find(
+                  item.start_turn_waypoint_guid);
+
+          if (mapped_turn_wp != waypoint_guid_map.end())
+            item.start_turn_waypoint_guid =
+                mapped_turn_wp->second;
+
+          // General route/waypoint identity follows the anchor too.
+          item.route_guid = item.start_turn_route_guid;
+          item.waypoint_guid = item.start_turn_waypoint_guid;
         }
 
         if (item.start_is_mark) {
@@ -1357,7 +1477,6 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
             item.start_mark_guid =
                 mapped->second;
 
-          RefreshEblStartFromMark(item);
         }
 
         RecalculateEbl(item);
@@ -1366,16 +1485,30 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
 
         for (const RouteEblVrm& existing :
              m_ebl_vrms) {
-          const bool same_start =
-              item.start_is_mark ==
-                  existing.start_is_mark &&
-              (item.start_is_mark
-                   ? item.start_mark_guid ==
-                         existing.start_mark_guid
-                   : item.route_guid ==
-                             existing.route_guid &&
-                         item.waypoint_guid ==
-                             existing.waypoint_guid);
+          bool same_start = false;
+
+          if (item.start_is_mark || existing.start_is_mark) {
+            same_start =
+                item.start_is_mark == existing.start_is_mark &&
+                item.start_mark_guid == existing.start_mark_guid;
+          } else if (item.start_is_turn || existing.start_is_turn) {
+            same_start =
+                item.start_is_turn == existing.start_is_turn &&
+                item.start_turn_end == existing.start_turn_end &&
+                item.start_turn_route_guid ==
+                    existing.start_turn_route_guid &&
+                item.start_turn_waypoint_guid ==
+                    existing.start_turn_waypoint_guid;
+          } else if (item.start_is_free || existing.start_is_free) {
+            same_start =
+                item.start_is_free == existing.start_is_free &&
+                std::fabs(item.start_lat - existing.start_lat) < 1e-7 &&
+                std::fabs(item.start_lon - existing.start_lon) < 1e-7;
+          } else {
+            same_start =
+                item.route_guid == existing.route_guid &&
+                item.waypoint_guid == existing.waypoint_guid;
+          }
 
           const bool same_target =
               std::fabs(
@@ -1402,8 +1535,73 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
         }
       }
 
+      if (type == "turn") {
+        wxString turn_route_guid =
+            node->GetAttribute(
+                "routeGuid",
+                wxEmptyString);
+
+        wxString turn_waypoint_guid =
+            node->GetAttribute(
+                "waypointGuid",
+                wxEmptyString);
+
+        const double radius_nm =
+            AttrDouble(node, "radiusNm", 0.10);
+
+        const bool turn_visible =
+            AttrBool(node, "visible", true);
+
+        const double rudder_angle_deg =
+            AttrDouble(node, "rudderAngleDeg", 0.0);
+
+        if (turn_route_guid == old_route_guid ||
+            turn_route_guid.IsEmpty())
+          turn_route_guid = new_route_guid;
+
+        auto mapped_turn_wp =
+            waypoint_guid_map.find(
+                turn_waypoint_guid);
+
+        if (mapped_turn_wp != waypoint_guid_map.end())
+          turn_waypoint_guid =
+              mapped_turn_wp->second;
+
+        RouteTurn turn;
+        wxString turn_error;
+
+        if (BuildTurnFromRoute(
+                turn_route_guid,
+                turn_waypoint_guid,
+                radius_nm,
+                turn,
+                &turn_error)) {
+          bool duplicate_turn = false;
+
+          for (const RouteTurn& existing :
+               m_turns) {
+            if (existing.route_guid == turn.route_guid &&
+                existing.waypoint_guid == turn.waypoint_guid) {
+              duplicate_turn = true;
+              break;
+            }
+          }
+
+          if (!duplicate_turn) {
+            turn.visible = turn_visible;
+            turn.rudder_angle_deg =
+                std::clamp(rudder_angle_deg, 0.0, 45.0);
+            m_turns.push_back(turn);
+            ++turn_count;
+          }
+        }
+      }
+
       if (type == "pil") {
         RoutePil item;
+
+        item.visible =
+            AttrBool(node, "visible", true);
 
         item.route_guid =
             node->GetAttribute(
@@ -1566,27 +1764,32 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
 
   SetStatus(
       wxString::Format(
-          _("GPX package imported: %lu WP, %lu EBL/VRM, %lu PIL."),
+          _("GPX package imported: %lu WP, %lu EBL/VRM, %lu PIL, %lu TURN."),
           static_cast<unsigned long>(
               waypoints.size()),
           static_cast<unsigned long>(
               ebl_count),
           static_cast<unsigned long>(
-              pil_count)));
+              pil_count),
+          static_cast<unsigned long>(
+              turn_count)));
 
   wxMessageBox(
       wxString::Format(
           _("Route '%s' imported successfully.\n\n"
             "%lu waypoints\n"
             "%lu EBL/VRM\n"
-            "%lu PIL"),
+            "%lu PIL\n"
+            "%lu TURN"),
           route_name,
           static_cast<unsigned long>(
               waypoints.size()),
           static_cast<unsigned long>(
               ebl_count),
           static_cast<unsigned long>(
-              pil_count)),
+              pil_count),
+          static_cast<unsigned long>(
+              turn_count)),
       _("Route GPX"),
       wxOK | wxICON_INFORMATION,
       m_dialog
