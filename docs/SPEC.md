@@ -1,6 +1,6 @@
 # Route Toolbar — Functional Specification
 
-## Version 0.5.7 scope
+## Version 0.5.8 scope
 
 Route Toolbar covers these primary workflows:
 

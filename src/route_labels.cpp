@@ -187,6 +187,8 @@ void route_toolbar_pi::DrawRouteLegLabels(wxDC& dc, PlugIn_ViewPort* vp) const {
   for (size_t r = 0; r < routes.GetCount(); ++r) {
     auto route = GetRoute_Plugin(routes[r]);
     if (!route || !route->pWaypointList) continue;
+    auto route_ex = GetRouteExV2_Plugin(routes[r]);
+    if (route_ex && !route_ex->m_isVisible) continue;
 
     std::vector<PlugIn_Waypoint*> points;
     for (auto node = route->pWaypointList->GetFirst(); node; node = node->GetNext()) {
@@ -300,6 +302,8 @@ void route_toolbar_pi::DrawRouteLegLabelsGL(PlugIn_ViewPort* vp) const {
   for (size_t r = 0; r < routes.GetCount(); ++r) {
     auto route = GetRoute_Plugin(routes[r]);
     if (!route || !route->pWaypointList) continue;
+    auto route_ex = GetRouteExV2_Plugin(routes[r]);
+    if (route_ex && !route_ex->m_isVisible) continue;
 
     std::vector<PlugIn_Waypoint*> points;
     for (auto node = route->pWaypointList->GetFirst(); node; node = node->GetNext()) {

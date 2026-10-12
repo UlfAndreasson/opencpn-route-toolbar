@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.8 — 2026-10-12
+
+### Changed
+
+- leg course/distance info now follows the OpenCPN route visibility state
+- importing a package onto an existing route with no Route Toolbar objects now attaches EBL/PIL/TURN directly without prompting or rewriting the route
+- when Route Toolbar objects already exist, Replace updates only the toolbar package; Import as new creates a new route copy
+- existing OpenCPN routes and waypoints remain owned and edited by OpenCPN
+- toolbar icon linework softened further to #989FA5
+
 ## 0.5.7 — 2026-10-12
 
 ### Changed
