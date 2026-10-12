@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.1 — 2026-10-12
+
+### Added
+
+- route-leg chart labels using compact true-course/distance format such as `128°T  0.84 M`
+- route-leg labels prefer placement above the leg and use the matching OpenCPN route colour
+- EBL/VRM start-point graphical editing
+- EBL/VRM selection/editing from start point, target point or EBL line
+- global **Hide all yellow notes / View all yellow notes** control in Route Toolbar
+- persisted yellow-note visibility setting
+
+### Changed
+
+- hiding yellow notes now leaves EBL/VRM and PIL geometry visible for a cleaner route-planning view
+- moving an EBL/VRM start point graphically detaches that start from its previous route waypoint/Mark association
+
 ## 0.4.0 — 2026-10-12
 
 First feature-complete Route Toolbar development milestone.
