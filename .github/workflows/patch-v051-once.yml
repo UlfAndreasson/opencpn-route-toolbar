@@ -1,0 +1,80 @@
+name: patch-v051-once
+on:
+  push:
+    branches: [fix/ebl-turn-notes-v0.5.1]
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/ebl-turn-notes-v0.5.1
+      - name: Apply v0.5.1 fixes
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p = Path('src/route_toolbar_pi.cpp')
+          s = p.read_text()
+          s = s.replace('constexpr int kPluginVersionPatch = 0;', 'constexpr int kPluginVersionPatch = 1;', 1)
+          old = '''  if (m_dialog_visible && m_pil_mode == PilMode::Idle &&\n      (m_ebl_mode == EblMode::Idle || m_ebl_mode == EblMode::AwaitRoutePoint)) {'''
+          new = '''  // Existing-object editing is only automatic while the EBL tool is idle.\n  // When Route EBL/VRM is active, a click must always be allowed to create a\n  // new EBL/VRM, even if it happens close to existing EBL geometry.\n  if (m_dialog_visible && m_pil_mode == PilMode::Idle &&\n      m_ebl_mode == EblMode::Idle) {'''
+          if old not in s:
+              raise SystemExit('EBL create/edit guard not found')
+          s = s.replace(old, new, 1)
+
+          marker = '''      _("What do you want to do with ") + name + _("?"),\n      actions);'''
+          if marker not in s:
+              raise SystemExit('EBL action dialog marker not found')
+          replacement = marker + '''\n\n  // wxWidgets/macOS can leave the modeless Route Toolbar visually disabled\n  // after a modal action dialog closes. Explicitly restore and repaint it\n  // before entering an interactive move operation.\n  if (m_dialog) {\n    m_dialog->Enable(true);\n    m_dialog->Show();\n    m_dialog->Raise();\n    m_dialog->Refresh();\n    m_dialog->Update();\n  }'''
+          s = s.replace(marker, replacement, 1)
+          p.write_text(s)
+
+          p = Path('src/route_turn.cpp')
+          s = p.read_text()
+          old = '''  DrawLabel(dc, turn_label,\n            wxPoint(start_px.x + 10, start_px.y + 8));'''
+          new = '''  if (m_notes_visible) {\n    DrawLabel(dc, turn_label,\n              wxPoint(start_px.x + 10, start_px.y + 8));\n  }'''
+          if old not in s:
+              raise SystemExit('wxDC TURN label block not found')
+          s = s.replace(old, new, 1)
+          old = '''  DrawGlLabel(turn_label, start_px.x + 10, start_px.y + 8);'''
+          new = '''  if (m_notes_visible)\n    DrawGlLabel(turn_label, start_px.x + 10, start_px.y + 8);'''
+          if old not in s:
+              raise SystemExit('OpenGL TURN label block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('README.md')
+          s = p.read_text()
+          s = s.replace('**Route Toolbar 0.5.0**', '**Route Toolbar 0.5.1**', 1)
+          s = s.replace('Hiding yellow notes leaves EBL/VRM and PIL geometry visible',
+                        'Hiding yellow notes hides EBL/VRM and TURN information boxes while leaving EBL/VRM, PIL and TURN geometry visible', 1)
+          p.write_text(s)
+
+          p = Path('CHANGELOG.md')
+          s = p.read_text()
+          entry = '''## 0.5.1 — 2026-10-12\n\n### Fixed\n\n- Route TURN yellow notes now follow the global **Hide/View all yellow notes** control\n- starting a new Route EBL/VRM no longer opens the edit menu when clicking near existing EBL geometry\n- Route Toolbar is explicitly restored and repainted after closing the EBL/VRM edit action dialog on macOS, preventing the blank/grey toolbar state before graphical move operations\n\n'''
+          if '## 0.5.1 — 2026-10-12' not in s:
+              s = s.replace('# Changelog\n\n', '# Changelog\n\n' + entry, 1)
+          p.write_text(s)
+
+          p = Path('docs/BUILDING.md')
+          s = p.read_text().replace('- Route Toolbar 0.5.0', '- Route Toolbar 0.5.1', 1)
+          p.write_text(s)
+
+          p = Path('docs/SPEC.md')
+          s = p.read_text().replace('## Version 0.5.0 scope', '## Version 0.5.1 scope', 1)
+          s = s.replace('- hiding notes does not hide the EBL/VRM, PIL or TURN geometry',
+                        '- hiding notes does not hide the EBL/VRM, PIL or TURN geometry\n- TURN information notes follow the same global yellow-note visibility control', 1)
+          p.write_text(s)
+      - name: Commit patch
+        run: |
+          git config user.name "Route Toolbar CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/route_toolbar_pi.cpp src/route_turn.cpp README.md CHANGELOG.md docs/BUILDING.md docs/SPEC.md
+          git commit -m "Fix EBL creation, modal repaint and TURN note visibility"
+          git push origin HEAD:fix/ebl-turn-notes-v0.5.1
