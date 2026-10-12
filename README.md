@@ -1,16 +1,29 @@
 # OpenCPN Route Toolbar
 
-Route Toolbar is an OpenCPN passage-planning plugin for practical, route-aware pilotage tools.
+**Route-aware coastal passage planning directly on your existing OpenCPN route.**
 
-It combines:
+Route Toolbar adds practical pilotage tools without requiring you to redraw the route as separate drawing objects. Work from the route already created in OpenCPN and add:
 
-- EBL / VRM sight lines
-- Parallel Index Lines (PIL)
-- route-turn geometry
-- route-leg course/distance labels
-- persistent/editable planning objects
-- PDF and CSV route reports
-- complete GPX package export/import
+- route-aware **EBL / VRM** sight lines
+- **Parallel Index Lines (PIL)** attached to route legs
+- **TURN** geometry at route waypoints
+- true-course / distance labels on every route leg
+- persistent, editable planning objects
+- PDF and CSV passage-plan reports
+- portable GPX route packages with Route Toolbar data
+
+## Why Route Toolbar?
+
+Many useful pilotage tools can be created with generic drawing tools, but they normally exist independently of the OpenCPN route itself. Route Toolbar is deliberately **route-aware**:
+
+- select an existing route leg or waypoint instead of recreating it
+- keep PIL, EBL/VRM and TURN planning linked to the route
+- automatically annotate route legs with course and distance
+- hide the OpenCPN route and its leg information disappears with it
+- export the route and its planning data together
+- keep OpenCPN as the owner/editor of the actual route and waypoints
+
+The goal is not to replace general-purpose drawing plugins. It is to make **coastal passage planning and pilotage preparation quicker when the OpenCPN route is already the centre of the workflow**.
 
 ## Current version
 
@@ -23,6 +36,16 @@ Current development target:
 - wxWidgets 3.2
 - macOS Apple Silicon
 
+> **Current status:** development preview. The plugin currently builds and runs on macOS Apple Silicon and is installed manually. OpenCPN Plugin Manager packaging and wider platform builds are the next release step.
+
+## Typical workflow
+
+1. Create or open your route in normal OpenCPN Route Manager.
+2. Open **Route Toolbar**.
+3. Add EBL/VRM sight lines, PILs and planned turns directly from route geometry.
+4. Review or temporarily hide planning objects from **Route Objects...**.
+5. Export a PDF/CSV route report or a complete GPX package.
+
 ## Route leg labels
 
 Each OpenCPN route leg is annotated with true course and distance using the compact format:
@@ -31,7 +54,9 @@ Each OpenCPN route leg is annotated with true course and distance using the comp
 128°T  0.84 M
 ```
 
-The label follows the route-leg angle and is placed immediately above shallow legs or immediately to the visual left of steep legs. Leg info is shown only while the source OpenCPN route itself is visible, and it also follows the global **Hide/View notes and leg info** control. OpenCPN API 1.21 does not expose every per-route custom display colour to plugins, so Route Toolbar uses the normal OpenCPN route display colour available through the plugin API.
+The label follows the route-leg angle and is placed immediately above shallow legs or immediately to the visual left of steep legs. Leg info is shown only while the source OpenCPN route itself is visible, and it also follows the global **Hide/View notes and leg info** control.
+
+OpenCPN API 1.21 does not expose every per-route custom display colour to plugins, so Route Toolbar uses the normal OpenCPN route display colour available through the plugin API.
 
 ## Route EBL / VRM
 
@@ -154,11 +179,16 @@ cmake -S . -B build \
 cmake --build build -j 4
 ```
 
+## Public release / OpenCPN community
+
+See [docs/PUBLIC_RELEASE.md](docs/PUBLIC_RELEASE.md) for the planned path from the current development preview to an OpenCPN Plugin Manager beta release.
+
 ## Documentation
 
 - [Functional specification](docs/SPEC.md)
 - [Build instructions](docs/BUILDING.md)
 - [GPX package format](docs/GPX_FORMAT.md)
+- [Public release plan](docs/PUBLIC_RELEASE.md)
 - [Changelog](CHANGELOG.md)
 
 ## Upstream references
