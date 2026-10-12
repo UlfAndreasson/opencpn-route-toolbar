@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.4 — 2026-10-12
+
+### Changed
+
+- route-leg course/distance text is rotated to follow the exact route-leg angle
+- 090/270 degree legs remain horizontal, 000/180 degree legs become vertical, and diagonal legs follow their line angle
+- labels remain centred near the leg midpoint with approximately 1 px clearance from the route line
+- OpenGL and wxDC rendering use the same rotated placement
+
 ## 0.5.3 — 2026-10-12
 
 ### Changed
