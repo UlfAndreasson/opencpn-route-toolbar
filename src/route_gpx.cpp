@@ -1006,14 +1006,32 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
 
   bool import_as_new = false;
 
-  std::unique_ptr<PlugIn_Route>
-      existing_backup;
+  const auto belongs_to_existing_route = [&](const wxString& guid,
+                                               const wxString& name) {
+    return guid == old_route_guid ||
+           (guid.IsEmpty() && name == route_name);
+  };
 
-  if (existing_route) {
-    existing_backup =
-        GetRoute_Plugin(
-            old_route_guid);
+  const bool has_existing_toolbar_objects =
+      existing_route &&
+      (std::any_of(m_ebl_vrms.begin(), m_ebl_vrms.end(),
+                   [&](const RouteEblVrm& item) {
+                     return !item.start_is_mark &&
+                            belongs_to_existing_route(item.route_guid,
+                                                      item.route_name);
+                   }) ||
+       std::any_of(m_pils.begin(), m_pils.end(),
+                   [&](const RoutePil& item) {
+                     return belongs_to_existing_route(item.route_guid,
+                                                      item.route_name);
+                   }) ||
+       std::any_of(m_turns.begin(), m_turns.end(),
+                   [&](const RouteTurn& item) {
+                     return belongs_to_existing_route(item.route_guid,
+                                                      item.route_name);
+                   }));
 
+  if (existing_route && has_existing_toolbar_objects) {
     wxMessageDialog conflict_dialog(
         m_dialog
             ? static_cast<wxWindow*>(m_dialog)
@@ -1042,6 +1060,9 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
         answer == wxID_NO;
   }
 
+  const bool reuse_existing_route =
+      existing_route && !import_as_new;
+
   wxString new_route_guid =
       old_route_guid;
 
@@ -1067,6 +1088,23 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
       waypoint_guid_map[
           old_guid] =
               waypoint.guid;
+  }
+
+  if (reuse_existing_route) {
+    auto current_route = GetRoute_Plugin(old_route_guid);
+    if (current_route && current_route->pWaypointList) {
+      size_t index = 0;
+      for (auto node = current_route->pWaypointList->GetFirst();
+           node && index < waypoints.size();
+           node = node->GetNext(), ++index) {
+        PlugIn_Waypoint* current_wp = node->GetData();
+        if (!current_wp) continue;
+        const wxString package_guid = waypoints[index].guid;
+        if (!package_guid.IsEmpty())
+          waypoint_guid_map[package_guid] = current_wp->m_GUID;
+        waypoints[index].guid = current_wp->m_GUID;
+      }
+    }
   }
 
   // ----------------------------------------------------------
@@ -1140,61 +1178,33 @@ void route_toolbar_pi::ImportRouteGpxPackage() {
   }
 
   // ----------------------------------------------------------
-  // Replace route only after parsing succeeded.
+  // OpenCPN owns the route. Reuse an existing route unchanged; create the
+  // GPX route only when it does not exist or the user chose Import as new.
   // ----------------------------------------------------------
 
-  if (existing_route &&
-      !import_as_new) {
-    wxString guid =
-        old_route_guid;
+  if (!reuse_existing_route) {
+    PlugIn_Route imported_route;
 
-    DeletePlugInRoute(guid);
-  }
+    imported_route.m_NameString = route_name;
+    imported_route.m_GUID = new_route_guid;
 
-  PlugIn_Route imported_route;
+    for (const GpxWaypoint& waypoint : waypoints) {
+      wxString symbol = waypoint.symbol;
+      if (symbol.IsEmpty()) symbol = "circle";
 
-  imported_route.m_NameString =
-      route_name;
+      auto* imported_waypoint = new PlugIn_Waypoint(
+          waypoint.lat, waypoint.lon, symbol, waypoint.name, waypoint.guid);
+      imported_route.pWaypointList->Append(imported_waypoint);
+    }
 
-  imported_route.m_GUID =
-      new_route_guid;
-
-  for (const GpxWaypoint& waypoint :
-       waypoints) {
-    wxString symbol =
-        waypoint.symbol;
-
-    if (symbol.IsEmpty())
-      symbol = "circle";
-
-    auto* imported_waypoint =
-        new PlugIn_Waypoint(
-            waypoint.lat,
-            waypoint.lon,
-            symbol,
-            waypoint.name,
-            waypoint.guid);
-
-    imported_route.pWaypointList->Append(
-        imported_waypoint);
-  }
-
-  if (!AddPlugInRoute(
-          &imported_route, true)) {
-    if (existing_backup)
-      AddPlugInRoute(
-          existing_backup.get(),
-          true);
-
-    wxMessageBox(
-        _("OpenCPN could not create the imported route."),
-        _("Route GPX"),
-        wxOK | wxICON_ERROR,
-        m_dialog
-            ? static_cast<wxWindow*>(m_dialog)
-            : m_parent_window);
-
-    return;
+    if (!AddPlugInRoute(&imported_route, true)) {
+      wxMessageBox(
+          _("OpenCPN could not create the imported route."),
+          _("Route GPX"),
+          wxOK | wxICON_ERROR,
+          m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window);
+      return;
+    }
   }
 
   // ----------------------------------------------------------
