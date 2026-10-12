@@ -100,8 +100,8 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   m_notes_button = new wxButton(
       this, ID_NOTES_VISIBILITY,
       m_plugin && !m_plugin->GetNotesVisible()
-          ? _("View all yellow notes")
-          : _("Hide all yellow notes"));
+          ? _("View notes and leg info")
+          : _("Hide notes and leg info"));
   top->Add(m_notes_button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
   m_status = new wxStaticText(
@@ -229,8 +229,8 @@ void RouteToolbarDialog::OnNotesVisibility(wxCommandEvent&) {
   if (!m_plugin || !m_notes_button) return;
   const bool visible = !m_plugin->GetNotesVisible();
   m_plugin->SetNotesVisible(visible);
-  m_notes_button->SetLabel(visible ? _("Hide all yellow notes")
-                                   : _("View all yellow notes"));
+  m_notes_button->SetLabel(visible ? _("Hide notes and leg info")
+                                   : _("View notes and leg info"));
   Layout();
 }
 

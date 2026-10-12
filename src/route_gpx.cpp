@@ -225,25 +225,16 @@ void route_toolbar_pi::RouteGpx() {
   CancelInteractiveTool();
 
   wxArrayString actions;
+  actions.Add(_("Export complete route package..."));
+  actions.Add(_("Import route package..."));
 
-  actions.Add(
-      _("Export complete route package..."));
-
-  actions.Add(
-      _("Import route package..."));
-
-  wxSingleChoiceDialog dialog(
-      m_dialog
-          ? static_cast<wxWindow*>(m_dialog)
-          : m_parent_window,
-      _("Export or import a complete Route Toolbar GPX package."),
+  const int selected = ShowActionButtons(
       _("Route GPX"),
+      _("What do you want to do with Route Toolbar GPX?"),
       actions);
+  if (selected < 0) return;
 
-  if (dialog.ShowModal() != wxID_OK)
-    return;
-
-  if (dialog.GetSelection() == 0)
+  if (selected == 0)
     ExportRouteGpxPackage();
   else
     ImportRouteGpxPackage();
