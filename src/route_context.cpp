@@ -55,6 +55,29 @@ void route_toolbar_pi::EnsureContextMenu() {
   SetCanvasContextMenuItemViz(m_context_pil_id, true);
 }
 
+int route_toolbar_pi::FindNearestEblGeometry(double lat, double lon,
+                                             double max_distance_nm) const {
+  int best = -1;
+  double best_distance = std::numeric_limits<double>::max();
+  const XY p{0.0, 0.0};
+
+  for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
+    const RouteEblVrm& ebl = m_ebl_vrms[i];
+    const XY a = ToLocalNm(ebl.start_lat, ebl.start_lon, lat, lon);
+    const XY b = ToLocalNm(ebl.target_lat, ebl.target_lon, lat, lon);
+    const double line_distance = DistancePointToSegmentNm(p, a, b);
+    const double start_distance = std::hypot(a.x, a.y);
+    const double target_distance = std::hypot(b.x, b.y);
+    const double distance = std::min(line_distance,
+                                     std::min(start_distance, target_distance));
+    if (distance <= max_distance_nm && distance < best_distance) {
+      best = static_cast<int>(i);
+      best_distance = distance;
+    }
+  }
+  return best;
+}
+
 int route_toolbar_pi::FindNearestPil(double lat, double lon,
                                      double max_distance_nm) const {
   int best = -1;
@@ -84,11 +107,11 @@ void route_toolbar_pi::OnContextMenuItemCallback(int id) {
                               : m_parent_window;
 
   if (id == m_context_ebl_id) {
-    const int ebl = FindNearestEblTarget(m_cursor_lat, m_cursor_lon, 0.04);
+    const int ebl = FindNearestEblGeometry(m_cursor_lat, m_cursor_lon, 0.05);
     if (ebl >= 0) {
       ShowEblTargetActions(ebl);
     } else {
-      wxMessageBox(_("No Route Toolbar EBL/VRM target was found close to the right-click position."),
+      wxMessageBox(_("No Route Toolbar EBL/VRM start point, target or line was found close to the right-click position."),
                    _("Route EBL / VRM"), wxOK | wxICON_INFORMATION, parent);
     }
     return;

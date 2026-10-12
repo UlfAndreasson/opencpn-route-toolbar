@@ -7,13 +7,14 @@ It combines:
 
 - EBL / VRM sight lines
 - Parallel Index Lines (PIL)
+- route-leg course/distance labels
 - persistent/editable planning objects
 - PDF and CSV route reports
 - complete GPX package export/import
 
 ## Current version
 
-**Route Toolbar 0.4.0**
+**Route Toolbar 0.4.1**
 
 Current development target:
 
@@ -21,6 +22,19 @@ Current development target:
 - OpenCPN plugin API 1.21
 - wxWidgets 3.2
 - macOS Apple Silicon
+
+## Route leg labels
+
+Each OpenCPN route leg can be annotated directly on the chart with true course
+and distance using the compact format:
+
+```text
+128°T  0.84 M
+```
+
+The label is placed above the route leg when screen space permits. If the route
+has an explicit OpenCPN route colour, the label uses the same colour. Routes
+using OpenCPN's default colour use the matching OpenCPN route display colour.
 
 ## Route EBL / VRM
 
@@ -60,19 +74,28 @@ EBL labels support:
 - persistent manual position
 - reset to automatic position
 - labels hidden when the target is outside the visible chart area
+- global **Hide all yellow notes / View all yellow notes** control in Route Toolbar
 
-This avoids labels being pinned to the screen edge when their actual sight
-target is off-screen.
+Hiding yellow notes leaves EBL/VRM and PIL geometry visible so the chart can be
+used without the information boxes obscuring the route.
 
 ### EBL/VRM editing
 
-Chart context-menu actions include:
+An existing EBL/VRM can be selected from its start point, target/end point or
+the EBL line itself. Chart context-menu editing no longer requires clicking the
+target crosshair/arc.
 
+Available actions include:
+
+- Move start point
 - Move target
 - Move label
 - Reset label position
 - Rename
 - Delete
+
+Moving a start point graphically makes that EBL/VRM start a free chart position;
+it is no longer tied to its original route waypoint or Mark.
 
 ## Route PIL
 
@@ -175,7 +198,8 @@ See [docs/GPX_FORMAT.md](docs/GPX_FORMAT.md).
 
 ## Persistence
 
-Normal working state is persisted in OpenCPN configuration.
+Normal working state is persisted in OpenCPN configuration, including yellow
+note visibility.
 
 Route Toolbar intentionally loads navigation-linked state a few seconds after
 OpenCPN startup. This allows OpenCPN routes, waypoints and Marks to be fully
