@@ -1,0 +1,141 @@
+name: One-shot v0.5.9 plugin icon update
+
+on:
+  push:
+    branches:
+      - ui/plugin-icon-v0.5.9
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/plugin-icon-v0.5.9
+
+      - name: Apply v0.5.9 icon and version updates
+        shell: python
+        run: |
+          from pathlib import Path
+
+          cpp = Path('src/route_toolbar_pi.cpp')
+          text = cpp.read_text()
+          text = text.replace('constexpr int kPluginVersionPatch = 8;',
+                              'constexpr int kPluginVersionPatch = 9;', 1)
+
+          old = '''static const char* route_toolbar_xpm[] = {
+              "16 16 2 1",
+              "  c None",
+              "D c #777777",
+              "                ",
+              "  DDD           ",
+              "  D D           ",
+              "  DDD           ",
+              "     D          ",
+              "      DDD       ",
+              "      D D       ",
+              "      DDD       ",
+              "         D      ",
+              "          DDD   ",
+              "          D D   ",
+              "          DDD   ",
+              "                ",
+              "                ",
+              "                ",
+              "                "};'''
+
+          new = '''static const char* route_toolbar_xpm[] = {
+              "32 32 4 1",
+              "  c None",
+              "B c #2B2D2F",
+              "G c #989FA5",
+              "L c #CFD3D6",
+              "                                ",
+              "                                ",
+              "    LLLLLLLLLLLLLLLLLLLLLLLL    ",
+              "   LBBBBBBBBBBBBBBBBBBBBBBBBL   ",
+              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+              "  LBBBBBGBBBBBBBBBBBBBBBBBBBBL  ",
+              "  LBBBBGBGBBBBBBBBBBBBBBBBBBBL  ",
+              "  LBBBGBBBGBBBBBBBBBBBBBGBBBBL  ",
+              "  LBBBBGGGBBBBBBBBBBBBBGBGBBBL  ",
+              "  LBBBBBGGBBBBBBBBBBBBGBBBGBBL  ",
+              "  LBBBBBBGGBBBBBBBBBBBBGGGBBBL  ",
+              "  LBBBBBBBGGBBBBBBBBBBGGGBBBBL  ",
+              "  LBBBBBBBBGGBBBBBBBBGGBBBBBBL  ",
+              "  LBBBBBBBBBGBBBBBBBGGBBBBBBBL  ",
+              "  LBBBBBBBBBGGBBBBBBGBBBBBBBBL  ",
+              "  LBBBBBBBBBBGGBBBBGGBBBBBBBBL  ",
+              "  LBBBBBBBBBBBGGGBGGBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBBGBGGBBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBGGBGGBBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBBGGGBBBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBBBGBBBBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+              "   LBBBBBBBBBBBBBBBBBBBBBBBBL   ",
+              "    LLLLLLLLLLLLLLLLLLLLLLLL    ",
+              "                                ",
+              "                                "};'''
+
+          if old not in text:
+              raise SystemExit('Expected legacy XPM block not found')
+          text = text.replace(old, new, 1)
+          cpp.write_text(text)
+
+          cmake = Path('CMakeLists.txt')
+          text = cmake.read_text().replace(
+              'project(route_toolbar_pi VERSION 0.5.8 LANGUAGES CXX)',
+              'project(route_toolbar_pi VERSION 0.5.9 LANGUAGES CXX)', 1)
+          cmake.write_text(text)
+
+          pkg = Path('packaging/macos/make-package.sh')
+          text = pkg.read_text().replace('VERSION="${1:-0.5.8}"',
+                                         'VERSION="${1:-0.5.9}"', 1)
+          pkg.write_text(text)
+
+          wf = Path('.github/workflows/package-macos-plugin-manager.yml')
+          text = wf.read_text().replace('0.5.8', '0.5.9')
+          wf.write_text(text)
+
+          readme = Path('README.md')
+          text = readme.read_text()
+          text = text.replace('**Route Toolbar 0.5.8**',
+                              '**Route Toolbar 0.5.9**', 1)
+          text = text.replace(
+              '> **Current status:** development preview. The plugin currently builds and runs on macOS Apple Silicon and is installed manually. OpenCPN Plugin Manager packaging and wider platform builds are the next release step.',
+              '> **Current status:** development preview. The macOS Apple Silicon package has been successfully imported through OpenCPN Plugin Manager. Catalog distribution, universal macOS packaging and wider platform builds are the next release steps.',
+              1)
+          readme.write_text(text)
+
+          changelog = Path('CHANGELOG.md')
+          text = changelog.read_text()
+          marker = '# Changelog\n\n'
+          entry = '''## 0.5.9 — 2026-10-12
+
+### Changed
+
+- Plugin Manager icon now matches the Route Toolbar chart-toolbar icon instead of using the old black route glyph
+- macOS Apple Silicon Plugin Manager package version advanced to 0.5.9 after successful imported-plugin testing
+
+'''
+          if entry not in text:
+              text = text.replace(marker, marker + entry, 1)
+          changelog.write_text(text)
+
+      - name: Commit and push
+        run: |
+          git config user.name "Ulf Andreasson"
+          git config user.email "ulf@andreasson.co.uk"
+          git rm .github/workflows/one-shot-v059-icon.yml
+          git add src/route_toolbar_pi.cpp CMakeLists.txt packaging/macos/make-package.sh .github/workflows/package-macos-plugin-manager.yml README.md CHANGELOG.md
+          git commit -m "Route Toolbar 0.5.9: align Plugin Manager icon"
+          git push origin HEAD:ui/plugin-icon-v0.5.9
