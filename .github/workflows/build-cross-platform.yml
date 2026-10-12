@@ -10,6 +10,7 @@ on:
       - 'src/**'
       - 'include/**'
       - 'cmake/**'
+      - 'packaging/**'
       - 'CMakeLists.txt'
       - '.github/workflows/build-cross-platform.yml'
 
@@ -80,11 +81,25 @@ jobs:
           ldd build/libroute_toolbar_pi.so
           test "$(uname -m)" = "x86_64"
 
-      - name: Upload plugin
+      - name: Build Plugin Manager test package
+        run: |
+          ROOT="route_toolbar_pi-0.5.9_ubuntu-gtk3-x86_64-24.04"
+          mkdir -p "dist/$ROOT/lib/opencpn"
+          cp build/libroute_toolbar_pi.so "dist/$ROOT/lib/opencpn/libroute_toolbar_pi.so"
+          sed 's/@VERSION@/0.5.9/g' packaging/linux/package-metadata.xml.in > "dist/$ROOT/metadata.xml"
+          xmllint --noout "dist/$ROOT/metadata.xml"
+          tar -C dist -czf "dist/$ROOT.tar.gz" "$ROOT"
+          tar -tzf "dist/$ROOT.tar.gz" | tee /tmp/route-toolbar-linux-package.txt
+          grep -q "$ROOT/metadata.xml" /tmp/route-toolbar-linux-package.txt
+          grep -q "$ROOT/lib/opencpn/libroute_toolbar_pi.so" /tmp/route-toolbar-linux-package.txt
+
+      - name: Upload Linux build and Plugin Manager package
         uses: actions/upload-artifact@v4
         with:
           name: route-toolbar-0.5.9-linux-x86_64
-          path: build/libroute_toolbar_pi.so
+          path: |
+            build/libroute_toolbar_pi.so
+            dist/route_toolbar_pi-0.5.9_ubuntu-gtk3-x86_64-24.04.tar.gz
 
   windows-x86_64:
     name: Windows x86_64
@@ -134,8 +149,27 @@ jobs:
           dumpbin /headers build\Release\route_toolbar_pi.dll | findstr /I "machine x64"
           dumpbin /dependents build\Release\route_toolbar_pi.dll
 
-      - name: Upload plugin
+      - name: Build Plugin Manager test package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'route_toolbar_pi-0.5.9_msvc-wx32-10-x86_64'
+          $stage = Join-Path 'dist' $root
+          New-Item -ItemType Directory -Force -Path (Join-Path $stage 'plugins') | Out-Null
+          Copy-Item 'build/Release/route_toolbar_pi.dll' (Join-Path $stage 'plugins/route_toolbar_pi.dll')
+          $metadata = (Get-Content 'packaging/windows/package-metadata.xml.in' -Raw).Replace('@VERSION@', '0.5.9')
+          Set-Content -Path (Join-Path $stage 'metadata.xml') -Value $metadata -Encoding utf8
+          [xml](Get-Content (Join-Path $stage 'metadata.xml') -Raw) | Out-Null
+          tar -C dist -czf "dist/$root.tar.gz" $root
+          $listing = tar -tzf "dist/$root.tar.gz"
+          $listing
+          if (-not ($listing -match "$root/metadata.xml")) { throw 'metadata.xml missing from Windows tarball' }
+          if (-not ($listing -match "$root/plugins/route_toolbar_pi.dll")) { throw 'plugin DLL missing from Windows tarball' }
+
+      - name: Upload Windows build and Plugin Manager package
         uses: actions/upload-artifact@v4
         with:
           name: route-toolbar-0.5.9-windows-x86_64
-          path: build/Release/route_toolbar_pi.dll
+          path: |
+            build/Release/route_toolbar_pi.dll
+            dist/route_toolbar_pi-0.5.9_msvc-wx32-10-x86_64.tar.gz
