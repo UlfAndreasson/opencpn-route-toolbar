@@ -1,0 +1,212 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "route_toolbar_pi.h"
+
+#include <algorithm>
+#include <vector>
+
+#include <wx/brush.h>
+#include <wx/dc.h>
+#include <wx/dcmemory.h>
+#include <wx/image.h>
+
+#ifdef __APPLE__
+#include <OpenGL/gl.h>
+#else
+#include <GL/gl.h>
+#endif
+
+namespace {
+wxColour GpxRouteColour(const wxString& name, const wxColour& fallback) {
+  struct NamedColour {
+    const char* name;
+    unsigned char r;
+    unsigned char g;
+    unsigned char b;
+  };
+  static const NamedColour colours[] = {
+      {"Black", 0x00, 0x00, 0x00},       {"DarkRed", 0x60, 0x00, 0x00},
+      {"DarkGreen", 0x00, 0x60, 0x00},   {"DarkYellow", 0x80, 0x80, 0x00},
+      {"DarkBlue", 0x00, 0x00, 0x60},    {"DarkMagenta", 0x60, 0x00, 0x60},
+      {"DarkCyan", 0x00, 0x80, 0x80},    {"LightGray", 0xC0, 0xC0, 0xC0},
+      {"DarkGray", 0x60, 0x60, 0x60},    {"Red", 0xFF, 0x00, 0x00},
+      {"Green", 0x00, 0xFF, 0x00},       {"Yellow", 0xF0, 0xF0, 0x00},
+      {"Blue", 0x00, 0x00, 0xFF},        {"Magenta", 0xFE, 0x00, 0xFE},
+      {"Cyan", 0x00, 0xFF, 0xFF},        {"White", 0xFF, 0xFF, 0xFF},
+  };
+  for (const auto& c : colours) {
+    if (name.CmpNoCase(wxString::FromUTF8(c.name)) == 0)
+      return wxColour(c.r, c.g, c.b);
+  }
+  return fallback;
+}
+}  // namespace
+
+wxColour route_toolbar_pi::ResolveRouteColour(const wxString& route_guid) const {
+  wxColour fallback(0, 105, 255);
+  wxColour global;
+  if (GetGlobalColor("UINFB", &global) && global.IsOk()) fallback = global;
+
+  auto route_ex = GetRouteEx_Plugin(route_guid);
+  if (!route_ex || route_ex->m_Colour.IsEmpty()) return fallback;
+  return GpxRouteColour(route_ex->m_Colour, fallback);
+}
+
+void route_toolbar_pi::DrawRouteLegLabels(wxDC& dc, PlugIn_ViewPort* vp) const {
+  if (!vp || !vp->bValid) return;
+
+  const wxFont old_font = dc.GetFont();
+  const wxColour old_text = dc.GetTextForeground();
+  dc.SetFont(GetEblLabelFont());
+
+  const wxArrayString routes = GetRouteGUIDArray();
+  for (size_t r = 0; r < routes.GetCount(); ++r) {
+    auto route = GetRoute_Plugin(routes[r]);
+    if (!route || !route->pWaypointList) continue;
+
+    std::vector<PlugIn_Waypoint*> points;
+    for (auto node = route->pWaypointList->GetFirst(); node; node = node->GetNext()) {
+      if (node->GetData()) points.push_back(node->GetData());
+    }
+    if (points.size() < 2) continue;
+
+    const wxColour colour = ResolveRouteColour(routes[r]);
+    dc.SetTextForeground(colour);
+
+    for (size_t i = 0; i + 1 < points.size(); ++i) {
+      double course = 0.0;
+      double distance = 0.0;
+      DistanceBearingMercator_Plugin(points[i + 1]->m_lat, points[i + 1]->m_lon,
+                                     points[i]->m_lat, points[i]->m_lon,
+                                     &course, &distance);
+      course = NormalizeBearing(course);
+      const wxString text = wxString::Format("%03.0f°T  %.2f M", course, distance);
+
+      wxPoint a, b;
+      GetCanvasPixLL(vp, &a, points[i]->m_lat, points[i]->m_lon);
+      GetCanvasPixLL(vp, &b, points[i + 1]->m_lat, points[i + 1]->m_lon);
+      const wxSize extent = dc.GetTextExtent(text);
+      int x = (a.x + b.x) / 2 - extent.x / 2;
+      int y = std::min(a.y, b.y) - extent.y - 6;
+      if (y < 3) y = (a.y + b.y) / 2 + 6;
+      x = std::clamp(x, 3, std::max(3, vp->pix_width - extent.x - 3));
+      y = std::clamp(y, 3, std::max(3, vp->pix_height - extent.y - 3));
+      dc.DrawText(text, x, y);
+    }
+  }
+
+  dc.SetTextForeground(old_text);
+  dc.SetFont(old_font);
+}
+
+void route_toolbar_pi::DrawGlText(const wxString& label, int x, int y,
+                                  const wxColour& colour) const {
+  if (label.IsEmpty()) return;
+
+  const wxFont font = GetEblLabelFont();
+  wxBitmap measure_bitmap(1, 1, 24);
+  wxMemoryDC measure_dc(measure_bitmap);
+  measure_dc.SetFont(font);
+  const wxSize extent = measure_dc.GetTextExtent(label);
+  measure_dc.SelectObject(wxNullBitmap);
+  if (extent.x <= 0 || extent.y <= 0) return;
+
+  const int width = extent.x + 2;
+  const int height = extent.y + 2;
+  wxBitmap bitmap(width, height, 24);
+  wxMemoryDC dc(bitmap);
+  dc.SetBackground(wxBrush(*wxBLACK));
+  dc.Clear();
+  dc.SetFont(font);
+  dc.SetTextForeground(*wxWHITE);
+  dc.DrawText(label, 1, 1);
+  dc.SelectObject(wxNullBitmap);
+
+  wxImage image = bitmap.ConvertToImage();
+  if (!image.IsOk() || !image.GetData()) return;
+  const unsigned char* rgb = image.GetData();
+  std::vector<unsigned char> rgba(static_cast<size_t>(width * height * 4), 0);
+  for (int i = 0; i < width * height; ++i) {
+    const unsigned char alpha = std::max(rgb[i * 3],
+                                 std::max(rgb[i * 3 + 1], rgb[i * 3 + 2]));
+    rgba[i * 4] = colour.Red();
+    rgba[i * 4 + 1] = colour.Green();
+    rgba[i * 4 + 2] = colour.Blue();
+    rgba[i * 4 + 3] = alpha;
+  }
+
+  GLint previous_texture = 0;
+  GLint previous_unpack_alignment = 4;
+  const GLboolean texture_was_enabled = glIsEnabled(GL_TEXTURE_2D);
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_texture);
+  glGetIntegerv(GL_UNPACK_ALIGNMENT, &previous_unpack_alignment);
+  GLuint texture = 0;
+  glGenTextures(1, &texture);
+  if (!texture) return;
+
+  glBindTexture(GL_TEXTURE_2D, texture);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+               GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+  glEnable(GL_TEXTURE_2D);
+  glColor4ub(255, 255, 255, 255);
+  glBegin(GL_QUADS);
+  glTexCoord2f(0.0f, 0.0f); glVertex2i(x, y);
+  glTexCoord2f(1.0f, 0.0f); glVertex2i(x + width, y);
+  glTexCoord2f(1.0f, 1.0f); glVertex2i(x + width, y + height);
+  glTexCoord2f(0.0f, 1.0f); glVertex2i(x, y + height);
+  glEnd();
+
+  glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous_texture));
+  glPixelStorei(GL_UNPACK_ALIGNMENT, previous_unpack_alignment);
+  if (texture_was_enabled) glEnable(GL_TEXTURE_2D); else glDisable(GL_TEXTURE_2D);
+  glDeleteTextures(1, &texture);
+}
+
+void route_toolbar_pi::DrawRouteLegLabelsGL(PlugIn_ViewPort* vp) const {
+  if (!vp || !vp->bValid) return;
+
+  wxBitmap measure_bitmap(1, 1, 24);
+  wxMemoryDC measure_dc(measure_bitmap);
+  measure_dc.SetFont(GetEblLabelFont());
+
+  const wxArrayString routes = GetRouteGUIDArray();
+  for (size_t r = 0; r < routes.GetCount(); ++r) {
+    auto route = GetRoute_Plugin(routes[r]);
+    if (!route || !route->pWaypointList) continue;
+
+    std::vector<PlugIn_Waypoint*> points;
+    for (auto node = route->pWaypointList->GetFirst(); node; node = node->GetNext()) {
+      if (node->GetData()) points.push_back(node->GetData());
+    }
+    if (points.size() < 2) continue;
+
+    const wxColour colour = ResolveRouteColour(routes[r]);
+    for (size_t i = 0; i + 1 < points.size(); ++i) {
+      double course = 0.0;
+      double distance = 0.0;
+      DistanceBearingMercator_Plugin(points[i + 1]->m_lat, points[i + 1]->m_lon,
+                                     points[i]->m_lat, points[i]->m_lon,
+                                     &course, &distance);
+      course = NormalizeBearing(course);
+      const wxString text = wxString::Format("%03.0f°T  %.2f M", course, distance);
+      const wxSize extent = measure_dc.GetTextExtent(text);
+
+      wxPoint a, b;
+      GetCanvasPixLL(vp, &a, points[i]->m_lat, points[i]->m_lon);
+      GetCanvasPixLL(vp, &b, points[i + 1]->m_lat, points[i + 1]->m_lon);
+      int x = (a.x + b.x) / 2 - extent.x / 2;
+      int y = std::min(a.y, b.y) - extent.y - 6;
+      if (y < 3) y = (a.y + b.y) / 2 + 6;
+      x = std::clamp(x, 3, std::max(3, vp->pix_width - extent.x - 3));
+      y = std::clamp(y, 3, std::max(3, vp->pix_height - extent.y - 3));
+      DrawGlText(text, x, y, colour);
+    }
+  }
+
+  measure_dc.SelectObject(wxNullBitmap);
+}
