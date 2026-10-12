@@ -283,19 +283,13 @@ void route_toolbar_pi::ExportRouteGpxPackage() {
   if (choices.IsEmpty())
     return;
 
-  wxSingleChoiceDialog route_dialog(
-      m_dialog
-          ? static_cast<wxWindow*>(m_dialog)
-          : m_parent_window,
-      _("Select the route to package."),
+  const int selected = ShowActionButtons(
       _("Export Route GPX"),
+      _("Select the route to package."),
       choices);
 
-  if (route_dialog.ShowModal() != wxID_OK)
+  if (selected < 0)
     return;
-
-  const int selected =
-      route_dialog.GetSelection();
 
   if (selected < 0 ||
       static_cast<size_t>(selected) >=

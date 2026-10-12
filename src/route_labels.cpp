@@ -35,19 +35,27 @@ RouteLegLabelGeometry BuildRouteLegLabelGeometry(const wxPoint& a,
   const double length = std::hypot(dx, dy);
   if (length < 0.5) return {};
 
-  // Choose one canonical reading direction for every leg.  Screen-space Y
-  // grows downwards.  Keeping the baseline angle in [0, 180) means the text
-  // is always readable by rotating the screen counter-clockwise (to the left),
-  // never by turning it to the right.
-  double screen_angle = std::atan2(dy, dx);
-  if (screen_angle < 0.0) screen_angle += M_PI;
-  double ux = std::cos(screen_angle);
-  double uy = std::sin(screen_angle);
+  // Text direction: use the same readable orientation as v0.5.4.  The
+  // baseline still follows the route leg, but is flipped when needed so the
+  // characters are not rendered upside down.
+  double ux = dx / length;
+  double uy = dy / length;
+  if (ux < 0.0 || (std::abs(ux) < 1e-9 && uy > 0.0)) {
+    ux = -ux;
+    uy = -uy;
+  }
 
-  // Always use the same side of the displayed leg.  This is the left/upper
-  // side after the corresponding counter-clockwise screen rotation.
-  const double nx = uy;
-  const double ny = -ux;
+  // Placement direction is deliberately independent of text direction.
+  // Shallow legs use the visual upper side; steep legs use the visual left
+  // side.  Therefore flipping the text for readability can never move the
+  // label to the opposite side of the route line.
+  double nx = dy / length;
+  double ny = -dx / length;
+  if (std::abs(dx) >= std::abs(dy)) {
+    if (ny > 0.0) { nx = -nx; ny = -ny; }
+  } else {
+    if (nx > 0.0) { nx = -nx; ny = -ny; }
+  }
 
   constexpr double gap_px = 1.0;
   const double half_w = static_cast<double>(extent.x) / 2.0;

@@ -248,11 +248,11 @@ void route_toolbar_pi::ExportRoutePdfReport() {
   }
   if (choices.IsEmpty()) return;
 
-  wxSingleChoiceDialog pick(parent,
-                            _("Select the OpenCPN route to include in the PDF report."),
-                            _("Route Report - PDF"), choices);
-  if (pick.ShowModal() != wxID_OK) return;
-  const int selected = pick.GetSelection();
+  const int selected = ShowActionButtons(
+      _("Route Report - PDF"),
+      _("Select the OpenCPN route to include in the PDF report."),
+      choices);
+  if (selected < 0) return;
   if (selected < 0 || static_cast<size_t>(selected) >= mapping.size()) return;
 
   const wxString route_guid = guids[mapping[static_cast<size_t>(selected)]];
