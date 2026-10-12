@@ -1,0 +1,43 @@
+name: patch-v053-once
+on:
+  push:
+    branches: [fix/route-leg-label-on-line-v0.5.3]
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/route-leg-label-on-line-v0.5.3
+      - name: Apply v0.5.3 version and docs
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/route_toolbar_pi.cpp')
+          s = p.read_text().replace('constexpr int kPluginVersionPatch = 2;', 'constexpr int kPluginVersionPatch = 3;', 1)
+          p.write_text(s)
+          p = Path('README.md')
+          s = p.read_text().replace('**Route Toolbar 0.5.2**', '**Route Toolbar 0.5.3**', 1)
+          p.write_text(s)
+          p = Path('docs/BUILDING.md')
+          s = p.read_text().replace('- Route Toolbar 0.5.2', '- Route Toolbar 0.5.3', 1)
+          p.write_text(s)
+          p = Path('docs/SPEC.md')
+          s = p.read_text().replace('## Version 0.5.2 scope', '## Version 0.5.3 scope', 1)
+          p.write_text(s)
+          p = Path('CHANGELOG.md')
+          s = p.read_text()
+          entry = '''## 0.5.3 — 2026-10-12\n\n### Changed\n\n- route-leg course/distance labels now sit essentially on the route line with a 1 px clearance\n- mostly vertical legs keep the label immediately to the left of the line\n\n'''
+          if '## 0.5.3 — 2026-10-12' not in s:
+              s = s.replace('# Changelog\n\n', '# Changelog\n\n' + entry, 1)
+          p.write_text(s)
+      - name: Commit patch
+        run: |
+          git config user.name "Route Toolbar CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/route_toolbar_pi.cpp README.md CHANGELOG.md docs/BUILDING.md docs/SPEC.md
+          git commit -m "Bump Route Toolbar to 0.5.3"
+          git push origin HEAD:fix/route-leg-label-on-line-v0.5.3
