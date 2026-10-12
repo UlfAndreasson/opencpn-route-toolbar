@@ -17,8 +17,8 @@ jobs:
           ref: ui/plugin-icon-v0.5.9
 
       - name: Apply v0.5.9 icon and version updates
-        shell: python
         run: |
+          python3 <<'PY'
           from pathlib import Path
 
           cpp = Path('src/route_toolbar_pi.cpp')
@@ -130,6 +130,7 @@ jobs:
           if entry not in text:
               text = text.replace(marker, marker + entry, 1)
           changelog.write_text(text)
+          PY
 
       - name: Commit and push
         run: |
