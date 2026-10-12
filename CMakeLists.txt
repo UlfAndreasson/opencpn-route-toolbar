@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(route_toolbar_pi VERSION 0.4.0 LANGUAGES CXX)
+project(route_toolbar_pi VERSION 0.4.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,6 +39,7 @@ add_library(route_toolbar_pi SHARED
   src/route_gpx.cpp
   src/route_pil.cpp
   src/route_context.cpp
+  src/route_labels.cpp
 )
 
 target_include_directories(route_toolbar_pi PRIVATE include)
