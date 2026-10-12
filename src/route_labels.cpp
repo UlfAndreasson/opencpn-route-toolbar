@@ -25,12 +25,13 @@ wxPoint RouteLegLabelPosition(const wxPoint& a, const wxPoint& b,
   const int mid_y = (a.y + b.y) / 2;
   const int dx = std::abs(b.x - a.x);
   const int dy = std::abs(b.y - a.y);
-  constexpr int gap_px = 4;
+  constexpr int gap_px = 1;
 
-  // Keep the annotation physically attached to the route leg. Mostly
-  // vertical legs get the label immediately to the left; all other legs get
-  // it immediately above. No viewport-edge clamping is used, since clamping
-  // makes labels appear to move independently of the route as the chart pans.
+  // Keep course/distance visually attached to the route leg itself. Mostly
+  // vertical legs get the text immediately to the left of the centre line;
+  // all other legs get it immediately above the centre line. The one-pixel
+  // clearance is intentional: the annotation should read as belonging to the
+  // leg, almost as if it were printed on the route line.
   if (dy > dx)
     return wxPoint(mid_x - extent.x - gap_px, mid_y - extent.y / 2);
 
