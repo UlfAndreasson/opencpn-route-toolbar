@@ -3,6 +3,7 @@
 #include "route_toolbar_pi.h"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include <wx/brush.h>
@@ -16,6 +17,35 @@
 #include <GL/gl.h>
 #endif
 
+namespace {
+
+wxPoint RouteLegLabelPosition(const wxPoint& a, const wxPoint& b,
+                              const wxSize& extent) {
+  const int mid_x = (a.x + b.x) / 2;
+  const int mid_y = (a.y + b.y) / 2;
+  const int dx = std::abs(b.x - a.x);
+  const int dy = std::abs(b.y - a.y);
+  constexpr int gap_px = 4;
+
+  // Keep the annotation physically attached to the route leg. Mostly
+  // vertical legs get the label immediately to the left; all other legs get
+  // it immediately above. No viewport-edge clamping is used, since clamping
+  // makes labels appear to move independently of the route as the chart pans.
+  if (dy > dx)
+    return wxPoint(mid_x - extent.x - gap_px, mid_y - extent.y / 2);
+
+  return wxPoint(mid_x - extent.x / 2, mid_y - extent.y - gap_px);
+}
+
+bool RouteLegLabelVisible(const wxPoint& pos, const wxSize& extent,
+                          const PlugIn_ViewPort* vp) {
+  if (!vp) return false;
+  return pos.x + extent.x >= 0 && pos.y + extent.y >= 0 &&
+         pos.x < vp->pix_width && pos.y < vp->pix_height;
+}
+
+}  // namespace
+
 wxColour route_toolbar_pi::ResolveRouteColour(const wxString&) const {
   // OpenCPN API 1.21 does not expose the route's optional GPXX display colour
   // through PlugIn_Route / PlugIn_Route_Ex. Use OpenCPN's current route display
@@ -28,7 +58,7 @@ wxColour route_toolbar_pi::ResolveRouteColour(const wxString&) const {
 }
 
 void route_toolbar_pi::DrawRouteLegLabels(wxDC& dc, PlugIn_ViewPort* vp) const {
-  if (!vp || !vp->bValid) return;
+  if (!vp || !vp->bValid || !m_notes_visible) return;
 
   const wxFont old_font = dc.GetFont();
   const wxColour old_text = dc.GetTextForeground();
@@ -61,12 +91,9 @@ void route_toolbar_pi::DrawRouteLegLabels(wxDC& dc, PlugIn_ViewPort* vp) const {
       GetCanvasPixLL(vp, &a, points[i]->m_lat, points[i]->m_lon);
       GetCanvasPixLL(vp, &b, points[i + 1]->m_lat, points[i + 1]->m_lon);
       const wxSize extent = dc.GetTextExtent(text);
-      int x = (a.x + b.x) / 2 - extent.x / 2;
-      int y = std::min(a.y, b.y) - extent.y - 6;
-      if (y < 3) y = (a.y + b.y) / 2 + 6;
-      x = std::clamp(x, 3, std::max(3, vp->pix_width - extent.x - 3));
-      y = std::clamp(y, 3, std::max(3, vp->pix_height - extent.y - 3));
-      dc.DrawText(text, x, y);
+      const wxPoint pos = RouteLegLabelPosition(a, b, extent);
+      if (RouteLegLabelVisible(pos, extent, vp))
+        dc.DrawText(text, pos);
     }
   }
 
@@ -143,7 +170,7 @@ void route_toolbar_pi::DrawGlText(const wxString& label, int x, int y,
 }
 
 void route_toolbar_pi::DrawRouteLegLabelsGL(PlugIn_ViewPort* vp) const {
-  if (!vp || !vp->bValid) return;
+  if (!vp || !vp->bValid || !m_notes_visible) return;
 
   wxBitmap measure_bitmap(1, 1, 24);
   wxMemoryDC measure_dc(measure_bitmap);
@@ -174,12 +201,9 @@ void route_toolbar_pi::DrawRouteLegLabelsGL(PlugIn_ViewPort* vp) const {
       wxPoint a, b;
       GetCanvasPixLL(vp, &a, points[i]->m_lat, points[i]->m_lon);
       GetCanvasPixLL(vp, &b, points[i + 1]->m_lat, points[i + 1]->m_lon);
-      int x = (a.x + b.x) / 2 - extent.x / 2;
-      int y = std::min(a.y, b.y) - extent.y - 6;
-      if (y < 3) y = (a.y + b.y) / 2 + 6;
-      x = std::clamp(x, 3, std::max(3, vp->pix_width - extent.x - 3));
-      y = std::clamp(y, 3, std::max(3, vp->pix_height - extent.y - 3));
-      DrawGlText(text, x, y, colour);
+      const wxPoint pos = RouteLegLabelPosition(a, b, extent);
+      if (RouteLegLabelVisible(pos, extent, vp))
+        DrawGlText(text, pos.x, pos.y, colour);
     }
   }
 

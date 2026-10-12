@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2 — 2026-10-12
+
+### Changed
+
+- route-leg course/distance labels are anchored to the midpoint of each leg
+- mostly horizontal legs place the label immediately above the route line
+- mostly vertical legs place the label immediately to the left of the route line
+- route-leg labels no longer clamp to viewport edges, preventing apparent label movement while panning
+- route-leg labels now follow the global **Hide/View all yellow notes** control
+
 ## 0.5.1 — 2026-10-12
 
 ### Fixed
