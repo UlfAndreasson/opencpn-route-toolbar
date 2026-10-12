@@ -12,6 +12,10 @@ Route Toolbar adds practical pilotage tools without requiring you to redraw the 
 - PDF and CSV passage-plan reports
 - portable GPX route packages with Route Toolbar data
 
+![Route Toolbar passage-planning overview](screenshots/Screenshot%202026-10-12%20at%2016.03.54.png)
+
+*Route-aware EBL/VRM, parallel index lines, turn geometry and leg information on an existing OpenCPN route.*
+
 ## Why Route Toolbar?
 
 Many useful pilotage tools can be created with generic drawing tools, but they normally exist independently of the OpenCPN route itself. Route Toolbar is deliberately **route-aware**:
@@ -46,6 +50,10 @@ Current development target:
 4. Review or temporarily hide planning objects from **Route Objects...**.
 5. Export a PDF/CSV route report or a complete GPX package.
 
+![Route Toolbar main window](screenshots/Screenshot%202026-10-12%20at%2016.04.04.png)
+
+*The main Route Toolbar keeps the passage-planning tools together without replacing OpenCPN's own route editor.*
+
 ## Route leg labels
 
 Each OpenCPN route leg is annotated with true course and distance using the compact format:
@@ -77,6 +85,10 @@ An existing EBL/VRM can be selected from its start point, target/end point or th
 
 Moving a start point graphically makes it a free chart position and removes its previous waypoint/Mark/TURN snap association.
 
+![Editing a Route EBL/VRM](screenshots/Screenshot%202026-10-12%20at%2016.04.14.png)
+
+*Existing EBL/VRM objects can be edited directly from the chart.*
+
 ## Route PIL
 
 Route PIL attaches a Parallel Index Line directly to an existing OpenCPN route leg.
@@ -104,6 +116,10 @@ TURN objects are persistent and can be used as EBL/VRM snap points. TURN data is
 
 **Route Objects...** lists saved EBL/VRM, PIL and TURN objects immediately when the dialog opens. Objects can be multi-selected, selected all at once, shown, hidden or deleted without deleting the source OpenCPN route.
 
+![Route Objects manager](screenshots/Screenshot%202026-10-12%20at%2016.05.10.png)
+
+*Route Objects provides one place to inspect, show, hide and manage the planning objects associated with the route.*
+
 ## Notes and leg info
 
 The toolbar provides **Hide notes and leg info / View notes and leg info**. Hiding them leaves EBL/VRM, PIL and TURN geometry visible, making it easier to inspect the route without information boxes or leg labels obscuring the chart. The setting is persistent.
@@ -126,6 +142,10 @@ Formats:
 - **CSV — Numbers / Excel / spreadsheet**
 
 The report includes route/waypoint information, course and distance, PIL offsets and EBL/VRM sight information.
+
+![Route Report CSV opened in Numbers](screenshots/Screenshot%202026-10-12%20at%2016.05.50.png)
+
+*CSV route report opened in Numbers, combining route legs, PIL and EBL/VRM passage-planning information.*
 
 ## Route GPX
 
