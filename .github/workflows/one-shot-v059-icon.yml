@@ -16,121 +16,14 @@ jobs:
         with:
           ref: ui/plugin-icon-v0.5.9
 
-      - name: Apply v0.5.9 icon and version updates
+      - name: Apply source and version updates
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          cpp = Path('src/route_toolbar_pi.cpp')
-          text = cpp.read_text()
-          text = text.replace('constexpr int kPluginVersionPatch = 8;',
-                              'constexpr int kPluginVersionPatch = 9;', 1)
-
-          old = '''static const char* route_toolbar_xpm[] = {
-              "16 16 2 1",
-              "  c None",
-              "D c #777777",
-              "                ",
-              "  DDD           ",
-              "  D D           ",
-              "  DDD           ",
-              "     D          ",
-              "      DDD       ",
-              "      D D       ",
-              "      DDD       ",
-              "         D      ",
-              "          DDD   ",
-              "          D D   ",
-              "          DDD   ",
-              "                ",
-              "                ",
-              "                ",
-              "                "};'''
-
-          new = '''static const char* route_toolbar_xpm[] = {
-              "32 32 4 1",
-              "  c None",
-              "B c #2B2D2F",
-              "G c #989FA5",
-              "L c #CFD3D6",
-              "                                ",
-              "                                ",
-              "    LLLLLLLLLLLLLLLLLLLLLLLL    ",
-              "   LBBBBBBBBBBBBBBBBBBBBBBBBL   ",
-              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
-              "  LBBBBBGBBBBBBBBBBBBBBBBBBBBL  ",
-              "  LBBBBGBGBBBBBBBBBBBBBBBBBBBL  ",
-              "  LBBBGBBBGBBBBBBBBBBBBBGBBBBL  ",
-              "  LBBBBGGGBBBBBBBBBBBBBGBGBBBL  ",
-              "  LBBBBBGGBBBBBBBBBBBBGBBBGBBL  ",
-              "  LBBBBBBGGBBBBBBBBBBBBGGGBBBL  ",
-              "  LBBBBBBBGGBBBBBBBBBBGGGBBBBL  ",
-              "  LBBBBBBBBGGBBBBBBBBGGBBBBBBL  ",
-              "  LBBBBBBBBBGBBBBBBBGGBBBBBBBL  ",
-              "  LBBBBBBBBBGGBBBBBBGBBBBBBBBL  ",
-              "  LBBBBBBBBBBGGBBBBGGBBBBBBBBL  ",
-              "  LBBBBBBBBBBBGGGBGGBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBBGBGGBBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBGGBGGBBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBBGGGBBBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBBBGBBBBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
-              "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
-              "   LBBBBBBBBBBBBBBBBBBBBBBBBL   ",
-              "    LLLLLLLLLLLLLLLLLLLLLLLL    ",
-              "                                ",
-              "                                "};'''
-
-          if old not in text:
-              raise SystemExit('Expected legacy XPM block not found')
-          text = text.replace(old, new, 1)
-          cpp.write_text(text)
-
-          cmake = Path('CMakeLists.txt')
-          text = cmake.read_text().replace(
-              'project(route_toolbar_pi VERSION 0.5.8 LANGUAGES CXX)',
-              'project(route_toolbar_pi VERSION 0.5.9 LANGUAGES CXX)', 1)
-          cmake.write_text(text)
-
-          pkg = Path('packaging/macos/make-package.sh')
-          text = pkg.read_text().replace('VERSION="${1:-0.5.8}"',
-                                         'VERSION="${1:-0.5.9}"', 1)
-          pkg.write_text(text)
-
-          wf = Path('.github/workflows/package-macos-plugin-manager.yml')
-          text = wf.read_text().replace('0.5.8', '0.5.9')
-          wf.write_text(text)
-
-          readme = Path('README.md')
-          text = readme.read_text()
-          text = text.replace('**Route Toolbar 0.5.8**',
-                              '**Route Toolbar 0.5.9**', 1)
-          text = text.replace(
-              '> **Current status:** development preview. The plugin currently builds and runs on macOS Apple Silicon and is installed manually. OpenCPN Plugin Manager packaging and wider platform builds are the next release step.',
-              '> **Current status:** development preview. The macOS Apple Silicon package has been successfully imported through OpenCPN Plugin Manager. Catalog distribution, universal macOS packaging and wider platform builds are the next release steps.',
-              1)
-          readme.write_text(text)
-
-          changelog = Path('CHANGELOG.md')
-          text = changelog.read_text()
-          marker = '# Changelog\n\n'
-          entry = '''## 0.5.9 — 2026-10-12
-
-### Changed
-
-- Plugin Manager icon now matches the Route Toolbar chart-toolbar icon instead of using the old black route glyph
-- macOS Apple Silicon Plugin Manager package version advanced to 0.5.9 after successful imported-plugin testing
-
-'''
-          if entry not in text:
-              text = text.replace(marker, marker + entry, 1)
-          changelog.write_text(text)
-          PY
+          python3 -c "from pathlib import Path; import re,base64; p=Path('src/route_toolbar_pi.cpp'); t=p.read_text(); t=t.replace('constexpr int kPluginVersionPatch = 8;','constexpr int kPluginVersionPatch = 9;',1); x=base64.b64decode('c3RhdGljIGNvbnN0IGNoYXIqIHJvdXRlX3Rvb2xiYXJfeHBtW10gPSB7CiAgICAiMzIgMzIgNCAxIiwKICAgICIgIGMgTm9uZSIsCiAgICAiQiBjICMyQjJEMkYiLAogICAgIkcgYyAjOTg5RkE1IiwKICAgICJMIGMgI0NGRDNENiIsCiAgICAiICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiLAogICAgIiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIiwKICAgICIgICAgTExMTExMTExMTExMTExMTExMTExMTExMICAgICIsCiAgICAiICAgTEJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkwgICAiLAogICAgIiAgTEJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCTCAgIiwKICAgICIgIExCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkwgICIsCiAgICAiICBMQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJMICAiLAogICAgIiAgTEJCQkJCR0JCQkJCQkJCQkJCQkJCQkJCQkJCTCAgIiwKICAgICIgIExCQkJCR0JHQkJCQkJCQkJCQkJCQkJCQkJCQkwgICIsCiAgICAiICBMQkJCR0JCQkdCQkJCQkJCQkJCQkJCR0JCQkJMICAiLAogICAgIiAgTEJCQkJHR0dCQkJCQkJCQkJCQkJCR0JHQkJCTCAgIiwKICAgICIgIExCQkJCQkdHQkJCQkJCQkJCQkJCR0JCQkdCQkwgICIsCiAgICAiICBMQkJCQkJCR0dCQkJCQkJCQkJCQkJHR0dCQkJMICAiLAogICAgIiAgTEJCQkJCQkJHR0JCQkJCQkJCQkJHR0dCQkJCTCAgIiwKICAgICIgIExCQkJCQkJCQkdHQkJCQkJCQkJHR0JCQkJCQkwgICIsCiAgICAiICBMQkJCQkJCQkJCR0JCQkJCQkJHR0JCQkJCQkJMICAiLAogICAgIiAgTEJCQkJCQkJCQkdHQkJCQkJCR0JCQkJCQkJCTCAgIiwKICAgICIgIExCQkJCQkJCQkJCR0dCQkJCR0dCQkJCQkJCQkwgICIsCiAgICAiICBMQkJCQkJCQkJCQkJHR0dCR0dCQkJCQkJCQkJMICAiLAogICAgIiAgTEJCQkJCQkJCQkJCQkdCR0dCQkJCQkJCQkJCTCAgIiwKICAgICIgIExCQkJCQkJCQkJCQkdHQkdHQkJCQkJCQkJCQkwgICIsCiAgICAiICBMQkJCQkJCQkJCQkJCR0dHQkJCQkJCQkJCQkJMICAiLAogICAgIiAgTEJCQkJCQkJCQkJCQkJHQkJCQkJCQkJCQkJCTCAgIiwKICAgICIgIExCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkwgICIsCiAgICAiICBMQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJMICAiLAogICAgIiAgTEJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCTCAgIiwKICAgICIgIExCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkwgICIsCiAgICAiICBMQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJMICAiLAogICAgIiAgIExCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJMICAgIiwKICAgICIgICAgTExMTExMTExMTExMTExMTExMTExMTExMICAgICIsCiAgICAiICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiLAogICAgIiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIn07').decode(); t,n=re.subn(r'static const char\\* route_toolbar_xpm\\[\\] = \\{.*?\\};',x,t,count=1,flags=re.S); assert n==1; p.write_text(t)"
+          python3 -c "from pathlib import Path; p=Path('CMakeLists.txt'); p.write_text(p.read_text().replace('project(route_toolbar_pi VERSION 0.5.8 LANGUAGES CXX)','project(route_toolbar_pi VERSION 0.5.9 LANGUAGES CXX)',1))"
+          python3 -c "from pathlib import Path; p=Path('packaging/macos/make-package.sh'); p.write_text(p.read_text().replace('VERSION=\"\${1:-0.5.8}\"','VERSION=\"\${1:-0.5.9}\"',1))"
+          python3 -c "from pathlib import Path; p=Path('.github/workflows/package-macos-plugin-manager.yml'); p.write_text(p.read_text().replace('0.5.8','0.5.9'))"
+          python3 -c "from pathlib import Path; p=Path('README.md'); t=p.read_text().replace('**Route Toolbar 0.5.8**','**Route Toolbar 0.5.9**',1); t=t.replace('> **Current status:** development preview. The plugin currently builds and runs on macOS Apple Silicon and is installed manually. OpenCPN Plugin Manager packaging and wider platform builds are the next release step.','> **Current status:** development preview. The macOS Apple Silicon package has been successfully imported through OpenCPN Plugin Manager. Catalog distribution, universal macOS packaging and wider platform builds are the next release steps.',1); p.write_text(t)"
+          python3 -c "from pathlib import Path; p=Path('CHANGELOG.md'); t=p.read_text(); marker='# Changelog\\n\\n'; entry='## 0.5.9 — 2026-10-12\\n\\n### Changed\\n\\n- Plugin Manager icon now matches the Route Toolbar chart-toolbar icon instead of using the old black route glyph\\n- macOS Apple Silicon Plugin Manager package version advanced to 0.5.9 after successful imported-plugin testing\\n\\n'; p.write_text(t if entry in t else t.replace(marker,marker+entry,1))"
 
       - name: Commit and push
         run: |
