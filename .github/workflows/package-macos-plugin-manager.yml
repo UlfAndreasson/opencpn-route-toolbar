@@ -1,0 +1,69 @@
+name: macOS Plugin Manager package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - packaging/plugin-manager-alpha-v0.5.9
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'cmake/**'
+      - 'packaging/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/package-macos-plugin-manager.yml'
+
+jobs:
+  package-macos-arm64:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install cmake wxwidgets@3.2
+
+      - name: Configure
+        run: |
+          WX_PREFIX="$(brew --prefix wxwidgets@3.2)"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DwxWidgets_CONFIG_EXECUTABLE="$WX_PREFIX/bin/wx-config-3.2"
+
+      - name: Build
+        run: cmake --build build --config Release -j 2
+
+      - name: Verify plugin binary
+        run: |
+          file build/libroute_toolbar_pi.dylib
+          lipo -info build/libroute_toolbar_pi.dylib
+          echo "Dependencies:"
+          otool -L build/libroute_toolbar_pi.dylib
+          if otool -L build/libroute_toolbar_pi.dylib | grep -E '/opt/homebrew|/usr/local/Cellar'; then
+            echo "Homebrew runtime dependency remains in plugin" >&2
+            exit 1
+          fi
+
+      - name: Build OpenCPN Plugin Manager tarball
+        run: bash packaging/macos/make-package.sh 0.5.8 build/libroute_toolbar_pi.dylib dist
+
+      - name: Validate metadata and package layout
+        run: |
+          xmllint --noout dist/route_toolbar_pi-0.5.8_darwin-wx32-10-arm64/metadata.xml
+          xmllint --noout dist/RouteToolbar-0.5.8-darwin-wx32-arm64-10.xml
+          tar -tzf dist/route_toolbar_pi-0.5.8_darwin-wx32-10-arm64.tar.gz | tee /tmp/package-files.txt
+          grep -q 'metadata.xml' /tmp/package-files.txt
+          grep -q 'OpenCPN.app/Contents/PlugIns/libroute_toolbar_pi.dylib' /tmp/package-files.txt
+
+      - name: Upload Plugin Manager test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-toolbar-0.5.8-macos-arm64-plugin-manager-test
+          path: |
+            dist/route_toolbar_pi-0.5.8_darwin-wx32-10-arm64.tar.gz
+            dist/RouteToolbar-0.5.8-darwin-wx32-arm64-10.xml

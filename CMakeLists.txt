@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(route_toolbar_pi VERSION 0.5.0 LANGUAGES CXX)
+project(route_toolbar_pi VERSION 0.5.8 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
