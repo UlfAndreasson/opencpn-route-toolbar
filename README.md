@@ -14,7 +14,7 @@ It combines:
 
 ## Current version
 
-**Route Toolbar 0.5.6**
+**Route Toolbar 0.5.7**
 
 Current development target:
 
@@ -77,7 +77,7 @@ TURN objects are persistent and can be used as EBL/VRM snap points. TURN data is
 
 ## Route Objects
 
-**Route Objects...** lists saved EBL/VRM, PIL and TURN objects immediately when the dialog opens. Objects can be shown, hidden or deleted without deleting the source OpenCPN route.
+**Route Objects...** lists saved EBL/VRM, PIL and TURN objects immediately when the dialog opens. Objects can be multi-selected, selected all at once, shown, hidden or deleted without deleting the source OpenCPN route.
 
 ## Yellow notes
 

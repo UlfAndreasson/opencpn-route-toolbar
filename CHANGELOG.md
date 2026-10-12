@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.7 — 2026-10-12
+
+### Changed
+
+- softened the Route Toolbar icon linework further to better match OpenCPN's grey toolbar icons
+- Route Objects now supports multi-selection and a Select all button
+- Show selected, Hide selected and Delete selected now act on every selected object
+
 ## 0.5.6 — 2026-10-12
 
 ### Changed
