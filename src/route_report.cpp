@@ -121,16 +121,15 @@ void route_toolbar_pi::ExportRouteCsvReport() {
     return;
   }
 
-  wxSingleChoiceDialog route_dialog(
-      m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
+  const int selected = ShowActionButtons(
+      _("Route Report - CSV"),
       _("Select the OpenCPN route to include in the report."),
-      _("Route Report - CSV"), choices);
-  if (route_dialog.ShowModal() != wxID_OK) {
+      choices);
+  if (selected < 0) {
     SetStatus(_("Route Report cancelled."));
     return;
   }
 
-  const int selected = route_dialog.GetSelection();
   if (selected < 0 ||
       static_cast<size_t>(selected) >= choice_to_route_index.size())
     return;

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.6 — 2026-10-12
+
+### Changed
+
+- corrected route-leg label orientation so text is no longer upside down
+- route-leg labels stay immediately above shallow legs or on the visual left side of steep legs, independently of text-direction flipping
+- all Route Toolbar selection menus now use action buttons instead of list/choice fields
+- Route Report CSV/PDF route selection and Route GPX route selection now use button dialogs
+- Route Toolbar icon linework is softened from bright white to a subdued grey-white
+
 ## 0.5.5 — 2026-10-12
 
 ### Changed

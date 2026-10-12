@@ -14,7 +14,7 @@ It combines:
 
 ## Current version
 
-**Route Toolbar 0.5.5**
+**Route Toolbar 0.5.6**
 
 Current development target:
 
@@ -31,7 +31,7 @@ Each OpenCPN route leg is annotated with true course and distance using the comp
 128°T  0.84 M
 ```
 
-The label is placed above the route leg when screen space permits. OpenCPN API 1.21 does not expose every per-route custom display colour to plugins, so Route Toolbar uses the normal OpenCPN route display colour available through the plugin API.
+The label follows the route-leg angle and is placed immediately above shallow legs or immediately to the visual left of steep legs. OpenCPN API 1.21 does not expose every per-route custom display colour to plugins, so Route Toolbar uses the normal OpenCPN route display colour available through the plugin API.
 
 ## Route EBL / VRM
 
@@ -81,7 +81,7 @@ TURN objects are persistent and can be used as EBL/VRM snap points. TURN data is
 
 ## Yellow notes
 
-The toolbar provides **Hide all yellow notes / View all yellow notes**. Hiding notes leaves EBL/VRM, PIL and TURN geometry visible, making it easier to inspect the route without information boxes obscuring the chart. The setting is persistent.
+The toolbar provides **Hide notes and leg info / View notes and leg info**. Hiding notes leaves EBL/VRM, PIL and TURN geometry visible, making it easier to inspect the route without information boxes obscuring the chart. The setting is persistent.
 
 ## Colours
 

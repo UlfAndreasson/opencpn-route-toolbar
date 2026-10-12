@@ -48,7 +48,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 5;
-constexpr int kPluginVersionPatch = 5;
+constexpr int kPluginVersionPatch = 6;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kTurnAnchorPickRadiusNm = 0.025;
@@ -104,7 +104,7 @@ wxString EnsureToolbarSvg() {
   <!-- route line -->
   <path d="M8.3 9.2 L15.8 20.0 L23.6 11.3"
         fill="none"
-        stroke="#eef1f3"
+        stroke="#c7ccd1"
         stroke-width="1.5"
         stroke-linecap="round"
         stroke-linejoin="round"/>
@@ -112,17 +112,17 @@ wxString EnsureToolbarSvg() {
   <!-- waypoints -->
   <circle cx="8.3" cy="9.2" r="2.35"
           fill="none"
-          stroke="#eef1f3"
+          stroke="#c7ccd1"
           stroke-width="1.35"/>
 
   <circle cx="15.8" cy="20.0" r="2.35"
           fill="none"
-          stroke="#eef1f3"
+          stroke="#c7ccd1"
           stroke-width="1.35"/>
 
   <circle cx="23.6" cy="11.3" r="2.35"
           fill="none"
-          stroke="#eef1f3"
+          stroke="#c7ccd1"
           stroke-width="1.35"/>
 
 </svg>)SVG";
