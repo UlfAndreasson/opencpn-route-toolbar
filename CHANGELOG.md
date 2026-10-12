@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.3 — 2026-10-12
+
+### Changed
+
+- route-leg course/distance labels now sit essentially on the route line with a 1 px clearance
+- mostly vertical legs keep the label immediately to the left of the line
+
 ## 0.5.2 — 2026-10-12
 
 ### Changed
