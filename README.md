@@ -31,7 +31,7 @@ The goal is not to replace general-purpose drawing plugins. It is to make **coas
 
 ## Current version
 
-**Route Toolbar 0.5.8**
+**Route Toolbar 0.5.9**
 
 Current development target:
 
@@ -40,7 +40,7 @@ Current development target:
 - wxWidgets 3.2
 - macOS Apple Silicon
 
-> **Current status:** development preview. The plugin currently builds and runs on macOS Apple Silicon and is installed manually. OpenCPN Plugin Manager packaging and wider platform builds are the next release step.
+> **Current status:** development preview. The macOS Apple Silicon package has been successfully imported through OpenCPN Plugin Manager. Catalog distribution, universal macOS packaging and wider platform builds are the next release steps.
 
 ## Typical workflow
 

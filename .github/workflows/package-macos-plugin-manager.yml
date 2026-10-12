@@ -50,20 +50,20 @@ jobs:
           fi
 
       - name: Build OpenCPN Plugin Manager tarball
-        run: bash packaging/macos/make-package.sh 0.5.8 build/libroute_toolbar_pi.dylib dist
+        run: bash packaging/macos/make-package.sh 0.5.9 build/libroute_toolbar_pi.dylib dist
 
       - name: Validate metadata and package layout
         run: |
-          xmllint --noout dist/route_toolbar_pi-0.5.8_darwin-wx32-10-arm64/metadata.xml
-          xmllint --noout dist/RouteToolbar-0.5.8-darwin-wx32-arm64-10.xml
-          tar -tzf dist/route_toolbar_pi-0.5.8_darwin-wx32-10-arm64.tar.gz | tee /tmp/package-files.txt
+          xmllint --noout dist/route_toolbar_pi-0.5.9_darwin-wx32-10-arm64/metadata.xml
+          xmllint --noout dist/RouteToolbar-0.5.9-darwin-wx32-arm64-10.xml
+          tar -tzf dist/route_toolbar_pi-0.5.9_darwin-wx32-10-arm64.tar.gz | tee /tmp/package-files.txt
           grep -q 'metadata.xml' /tmp/package-files.txt
           grep -q 'OpenCPN.app/Contents/PlugIns/libroute_toolbar_pi.dylib' /tmp/package-files.txt
 
       - name: Upload Plugin Manager test package
         uses: actions/upload-artifact@v4
         with:
-          name: route-toolbar-0.5.8-macos-arm64-plugin-manager-test
+          name: route-toolbar-0.5.9-macos-arm64-plugin-manager-test
           path: |
-            dist/route_toolbar_pi-0.5.8_darwin-wx32-10-arm64.tar.gz
-            dist/RouteToolbar-0.5.8-darwin-wx32-arm64-10.xml
+            dist/route_toolbar_pi-0.5.9_darwin-wx32-10-arm64.tar.gz
+            dist/RouteToolbar-0.5.9-darwin-wx32-arm64-10.xml
