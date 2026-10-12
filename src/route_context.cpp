@@ -8,8 +8,11 @@
 #include <limits>
 
 #include <wx/choicdlg.h>
+#include <wx/button.h>
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
+#include <wx/sizer.h>
+#include <wx/stattext.h>
 #include <wx/textdlg.h>
 
 namespace {
@@ -34,6 +37,32 @@ double DistancePointToSegmentNm(const XY& p, const XY& a, const XY& b) {
                               0.0, 1.0);
   return std::hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
+
+int ShowPilActionButtons(wxWindow* parent,
+                         const wxString& prompt,
+                         const wxArrayString& labels) {
+  wxDialog dialog(parent, wxID_ANY, _("Route PIL"), wxDefaultPosition,
+                  wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxSTAY_ON_TOP);
+  auto* top = new wxBoxSizer(wxVERTICAL);
+  auto* text = new wxStaticText(&dialog, wxID_ANY, prompt);
+  text->Wrap(360);
+  top->Add(text, 0, wxEXPAND | wxALL, 12);
+  for (size_t i = 0; i < labels.GetCount(); ++i) {
+    auto* b = new wxButton(&dialog, wxID_ANY, labels[i]);
+    top->Add(b, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
+    b->Bind(wxEVT_BUTTON, [&dialog, i](wxCommandEvent&) {
+      dialog.EndModal(static_cast<int>(i) + 1);
+    });
+  }
+  auto* cancel = new wxButton(&dialog, wxID_CANCEL, _("Cancel"));
+  top->Add(cancel, 0, wxALIGN_RIGHT | wxALL, 10);
+  dialog.SetSizerAndFit(top);
+  dialog.SetMinSize(wxSize(380, dialog.GetSize().GetHeight()));
+  const int result = dialog.ShowModal();
+  return result > 0 ? result - 1 : -1;
+}
+
+
 }  // namespace
 
 void route_toolbar_pi::EnsureContextMenu() {
@@ -60,16 +89,14 @@ int route_toolbar_pi::FindNearestEblGeometry(double lat, double lon,
   int best = -1;
   double best_distance = std::numeric_limits<double>::max();
   const XY p{0.0, 0.0};
-
   for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
     const RouteEblVrm& ebl = m_ebl_vrms[i];
+    if (!ebl.visible) continue;
     const XY a = ToLocalNm(ebl.start_lat, ebl.start_lon, lat, lon);
     const XY b = ToLocalNm(ebl.target_lat, ebl.target_lon, lat, lon);
-    const double line_distance = DistancePointToSegmentNm(p, a, b);
-    const double start_distance = std::hypot(a.x, a.y);
-    const double target_distance = std::hypot(b.x, b.y);
-    const double distance = std::min(line_distance,
-                                     std::min(start_distance, target_distance));
+    const double distance = std::min(
+        DistancePointToSegmentNm(p, a, b),
+        std::min(std::hypot(a.x, a.y), std::hypot(b.x, b.y)));
     if (distance <= max_distance_nm && distance < best_distance) {
       best = static_cast<int>(i);
       best_distance = distance;
@@ -86,6 +113,7 @@ int route_toolbar_pi::FindNearestPil(double lat, double lon,
 
   for (size_t i = 0; i < m_pils.size(); ++i) {
     const RoutePil& pil = m_pils[i];
+    if (!pil.visible) continue;
     const XY a = ToLocalNm(pil.line_start_lat, pil.line_start_lon, lat, lon);
     const XY b = ToLocalNm(pil.line_end_lat, pil.line_end_lon, lat, lon);
     const double distance = DistancePointToSegmentNm(p, a, b);
@@ -140,19 +168,19 @@ void route_toolbar_pi::ShowPilActions(int index) {
   choices.Add(_("Delete PIL"));
 
   const RoutePil& current = m_pils[static_cast<size_t>(index)];
-  wxSingleChoiceDialog action(
+  const int selected = ShowPilActionButtons(
       parent,
       wxString::Format(_("PIL on leg %d: %+.2f NM. What do you want to do?"),
                        current.leg_index, current.offset_nm),
-      _("Route PIL"), choices);
-  if (action.ShowModal() != wxID_OK) return;
+      choices);
+  if (selected < 0) return;
 
-  if (action.GetSelection() == 0) {
+  if (selected == 0) {
     BeginMovePilAnchor(index);
     return;
   }
 
-  if (action.GetSelection() == 2) {
+  if (selected == 2) {
     DeletePil(index);
     return;
   }

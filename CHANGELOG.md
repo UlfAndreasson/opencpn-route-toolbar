@@ -1,11 +1,32 @@
 # Changelog
 
+## 0.5.0 — 2026-10-12
+
+### Added
+
+- Route TURN geometry at interior route waypoints
+- planned TURN radius and optional manual rudder-angle planning value
+- TURN persistence and GPX package support
+- Route Objects manager for EBL/VRM, PIL and TURN objects
+- TURN start/end snap points for EBL/VRM creation
+
+### Fixed
+
+- Route Objects now populates immediately when opened
+- Route TURN / Route Objects development is integrated with the 0.4.1 route-label and EBL editing changes
+
+### Changed
+
+- PIL uses a tighter dashed pattern
+- global **Hide all yellow notes / View all yellow notes** works with the integrated 0.5.0 tools while leaving planning geometry visible
+- plugin version advanced to 0.5.0
+
 ## 0.4.1 — 2026-10-12
 
 ### Added
 
 - route-leg chart labels using compact true-course/distance format such as `128°T  0.84 M`
-- route-leg labels prefer placement above the leg and use the matching OpenCPN route colour
+- route-leg labels prefer placement above the leg
 - EBL/VRM start-point graphical editing
 - EBL/VRM selection/editing from start point, target point or EBL line
 - global **Hide all yellow notes / View all yellow notes** control in Route Toolbar
@@ -13,8 +34,8 @@
 
 ### Changed
 
-- hiding yellow notes now leaves EBL/VRM and PIL geometry visible for a cleaner route-planning view
-- moving an EBL/VRM start point graphically detaches that start from its previous route waypoint/Mark association
+- hiding yellow notes leaves EBL/VRM and PIL geometry visible for a cleaner route-planning view
+- moving an EBL/VRM start point graphically detaches that start from its previous snap association
 
 ## 0.4.0 — 2026-10-12
 
@@ -24,7 +45,6 @@ First feature-complete Route Toolbar development milestone.
 
 - Route-aware EBL/VRM
 - OpenCPN Mark-based EBL/VRM
-- Mark tracking using OpenCPN GUID
 - compact VRM arc
 - configurable EBL label size
 - configurable EBL/VRM colour
@@ -39,19 +59,7 @@ First feature-complete Route Toolbar development milestone.
 - delayed persistent-state loading
 - PDF Route Report
 - CSV Route Report
-- report section for Mark-based EBL/VRM
-- separate SB/BB PIL report rows
-- complete GPX route-package export
-- complete GPX route-package import
-- Import as new
-- Replace existing
-- route/waypoint/Mark GUID preservation
-
-### Changed
-
-- off-screen EBL target labels are hidden instead of pinned to chart edges
-- label placement is stable instead of dynamically reshuffled each redraw
-- PIL report output uses `SB:` / `BB:` notation
+- complete GPX route-package export/import
 
 ### Compatibility
 

@@ -1,12 +1,12 @@
 # OpenCPN Route Toolbar
 
-Route Toolbar is an OpenCPN passage-planning plugin for practical, route-aware
-pilotage tools.
+Route Toolbar is an OpenCPN passage-planning plugin for practical, route-aware pilotage tools.
 
 It combines:
 
 - EBL / VRM sight lines
 - Parallel Index Lines (PIL)
+- route-turn geometry
 - route-leg course/distance labels
 - persistent/editable planning objects
 - PDF and CSV route reports
@@ -14,7 +14,7 @@ It combines:
 
 ## Current version
 
-**Route Toolbar 0.4.1**
+**Route Toolbar 0.5.0**
 
 Current development target:
 
@@ -25,67 +25,23 @@ Current development target:
 
 ## Route leg labels
 
-Each OpenCPN route leg can be annotated directly on the chart with true course
-and distance using the compact format:
+Each OpenCPN route leg is annotated with true course and distance using the compact format:
 
 ```text
 128°T  0.84 M
 ```
 
-The label is placed above the route leg when screen space permits. If the route
-has an explicit OpenCPN route colour, the label uses the same colour. Routes
-using OpenCPN's default colour use the matching OpenCPN route display colour.
+The label is placed above the route leg when screen space permits. OpenCPN API 1.21 does not expose every per-route custom display colour to plugins, so Route Toolbar uses the normal OpenCPN route display colour available through the plugin API.
 
 ## Route EBL / VRM
 
-An EBL/VRM can originate from:
+An EBL/VRM can start at an exact free chart position, or be Shift-snapped to a nearby route waypoint, OpenCPN Mark or Route TURN start/end point. The target is a visual/radar sight target such as a lighthouse, buoy, beacon, cardinal mark or other conspicuous object.
 
-- an OpenCPN route waypoint, or
-- a standalone OpenCPN Mark.
-
-The second point is a visual/radar sight target such as a lighthouse, buoy,
-beacon, cardinal mark or other conspicuous object.
-
-Route Toolbar displays:
-
-- EBL line
-- target ring/crosshair
-- true bearing
-- range in NM
-- compact VRM arc
-- yellow information label
-
-The default VRM arc is 30 degrees total, centred on the EBL bearing.
-
-### Mark-based EBL/VRM
-
-For an EBL originating from a normal OpenCPN Mark, the Mark GUID is stored.
-
-If the Mark is moved in OpenCPN, Route Toolbar follows the new position and
-recalculates bearing and range.
-
-### EBL label handling
-
-EBL labels support:
-
-- configurable font size
-- stable automatic placement
-- manual label placement
-- persistent manual position
-- reset to automatic position
-- labels hidden when the target is outside the visible chart area
-- global **Hide all yellow notes / View all yellow notes** control in Route Toolbar
-
-Hiding yellow notes leaves EBL/VRM and PIL geometry visible so the chart can be
-used without the information boxes obscuring the route.
+Route Toolbar displays the EBL line, target ring/crosshair, true bearing, range, compact VRM arc and an optional yellow information note.
 
 ### EBL/VRM editing
 
-An existing EBL/VRM can be selected from its start point, target/end point or
-the EBL line itself. Chart context-menu editing no longer requires clicking the
-target crosshair/arc.
-
-Available actions include:
+An existing EBL/VRM can be selected from its start point, target/end point or the EBL line itself. Available actions include:
 
 - Move start point
 - Move target
@@ -94,13 +50,11 @@ Available actions include:
 - Rename
 - Delete
 
-Moving a start point graphically makes that EBL/VRM start a free chart position;
-it is no longer tied to its original route waypoint or Mark.
+Moving a start point graphically makes it a free chart position and removes its previous waypoint/Mark/TURN snap association.
 
 ## Route PIL
 
-Route PIL attaches a Parallel Index Line directly to an existing OpenCPN route
-leg.
+Route PIL attaches a Parallel Index Line directly to an existing OpenCPN route leg.
 
 Workflow:
 
@@ -108,102 +62,57 @@ Workflow:
 2. Click the route leg
 3. Click the geographic point through which the parallel line should pass
 
-The plugin calculates the perpendicular offset from the route leg.
-
 Offset convention:
 
 - positive = **SB / starboard**
 - negative = **BB / port**
 
-Multiple PILs can exist on one route leg.
+Multiple PILs can exist on one route leg. PIL objects are persistent, graphically editable and rendered with a compact dashed pattern.
 
-PIL objects are persistent and can be moved graphically or deleted.
+## Route TURN
+
+Route TURN creates tangent turn geometry at an interior route waypoint. The user supplies a geometric turn radius; Route Toolbar calculates the course change, wheel-over/turn-start position, tangent arc and turn-end position. A planned rudder angle can be stored as a manual planning value.
+
+TURN objects are persistent and can be used as EBL/VRM snap points. TURN data is included in Route Toolbar GPX package data.
+
+## Route Objects
+
+**Route Objects...** lists saved EBL/VRM, PIL and TURN objects immediately when the dialog opens. Objects can be shown, hidden or deleted without deleting the source OpenCPN route.
+
+## Yellow notes
+
+The toolbar provides **Hide all yellow notes / View all yellow notes**. Hiding notes leaves EBL/VRM, PIL and TURN geometry visible, making it easier to inspect the route without information boxes obscuring the chart. The setting is persistent.
 
 ## Colours
 
-Route Toolbar provides separate colour settings for:
+Route Toolbar provides persistent colour settings for:
 
 - EBL / VRM
 - PIL
-
-The settings are persistent.
+- TURN
 
 ## Route Report
 
-Route Report exports the OpenCPN route together with Route Toolbar planning
-data.
+Route Report exports the OpenCPN route together with Route Toolbar planning data.
 
 Formats:
 
 - **PDF — A4 landscape**
 - **CSV — Numbers / Excel / spreadsheet**
 
-The report includes:
-
-- route name
-- total route distance
-- waypoint number/name
-- waypoint latitude/longitude
-- course to next waypoint
-- leg distance
-- PIL information
-- sight-mark name
-- EBL true bearing
-- EBL range
-- sight-mark latitude/longitude
-
-PIL information is displayed as separate rows, for example:
-
-```text
-SB: 0.02 NM
-BB: 0.03 NM
-```
-
-EBL/VRM objects which originate from standalone OpenCPN Marks are included in a
-separate report section.
+The report includes route/waypoint information, course and distance, PIL offsets and EBL/VRM sight information.
 
 ## Route GPX
 
-**Route GPX...** provides complete route-package export/import.
+**Route GPX...** provides complete route-package export/import. The exported file is a normal GPX 1.1 document with Route Toolbar data in a namespaced `<extensions>` section.
 
-The exported file is a normal GPX 1.1 document containing:
-
-- OpenCPN route
-- route waypoints
-- referenced standalone Marks
-
-Route Toolbar data is stored in a namespaced GPX `<extensions>` section.
-
-A complete package includes:
-
-- route and waypoint GUIDs
-- referenced Mark GUIDs
-- EBL/VRM objects
-- sight-target names and positions
-- VRM arc width
-- manual EBL label positions
-- PIL offsets and geometry
-- EBL/PIL colours
-- EBL label size
-
-Import supports:
-
-- **Import as new**
-- **Replace existing**
-
-This makes GPX the portable backup and transfer format for a complete Route
-Toolbar passage plan.
+A package can contain route/waypoint identity, referenced Marks, EBL/VRM objects, PIL geometry, TURN geometry, colours and label settings. Import supports **Import as new** and **Replace existing**.
 
 See [docs/GPX_FORMAT.md](docs/GPX_FORMAT.md).
 
 ## Persistence
 
-Normal working state is persisted in OpenCPN configuration, including yellow
-note visibility.
-
-Route Toolbar intentionally loads navigation-linked state a few seconds after
-OpenCPN startup. This allows OpenCPN routes, waypoints and Marks to be fully
-initialized before their GUIDs are resolved.
+Normal working state is persisted in OpenCPN configuration. Route Toolbar intentionally loads navigation-linked state a few seconds after OpenCPN startup so routes, waypoints and Marks are initialized before their GUIDs are resolved.
 
 ## Design goals
 
@@ -216,8 +125,7 @@ initialized before their GUIDs are resolved.
 7. Portable
 8. Non-destructive
 
-Route Toolbar must not silently alter an OpenCPN route during normal EBL/PIL
-planning.
+Route Toolbar must not silently alter an OpenCPN route during normal planning.
 
 ## Build
 
@@ -251,12 +159,6 @@ cmake --build build -j 4
 - OCPN Draw: https://github.com/jongough/ocpn_draw_pi
 - OpenCPN plugin API libraries: https://github.com/OpenCPN/opencpn-libs
 
-OCPN Draw has been an important reference for navigation drawing concepts,
-persistence and GPX handling.
-
 ## Navigation notice
 
-Route Toolbar is passage-planning support software.
-
-It does not replace official charts, prudent navigation practice or independent
-position verification.
+Route Toolbar is passage-planning support software. It does not replace official charts, prudent navigation practice or independent position verification.
