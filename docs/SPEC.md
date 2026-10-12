@@ -1,13 +1,32 @@
 # Route Toolbar — Functional Specification
 
-## Version 0.4.0 scope
+## Version 0.4.1 scope
 
-Route Toolbar currently covers four primary workflows:
+Route Toolbar currently covers five primary workflows:
 
 1. Route/Mark based EBL/VRM
 2. Route-leg based Parallel Index Lines
-3. PDF/CSV Route Report
-4. Complete GPX route-package import/export
+3. Route-leg course/distance chart labels
+4. PDF/CSV Route Report
+5. Complete GPX route-package import/export
+
+## Route-leg labels
+
+Each OpenCPN route leg is annotated with true course and distance using exactly
+the compact format:
+
+```text
+128°T  0.84 M
+```
+
+Requirements:
+
+- true course shown as three digits followed by `°T`
+- distance shown with two decimals followed by `M`
+- label colour matches the OpenCPN route colour
+- default-route colour follows OpenCPN's route display colour
+- label is placed above the route leg when screen space permits
+- labels do not alter route geometry
 
 ## EBL / VRM
 
@@ -17,11 +36,16 @@ An EBL/VRM can originate from:
 
 - an OpenCPN route waypoint
 - a standalone OpenCPN Mark
+- a free chart position after graphical start-point editing
 
 For a route waypoint the plugin stores route and waypoint identity.
 
 For a standalone Mark the plugin stores the Mark GUID and refreshes the origin
 from OpenCPN.
+
+If the user graphically moves an existing EBL/VRM start point, the new start is
+stored as a free chart coordinate and the previous waypoint/Mark association is
+removed.
 
 ### Target
 
@@ -58,11 +82,24 @@ Requirements:
 - manual position survives restart
 - manual position can be reset
 - configurable font size
+- all yellow notes can be hidden/viewed globally from Route Toolbar
+- hiding notes does not hide the EBL/VRM or PIL geometry
+- global note visibility survives restart
 
 ### Editing
 
+An existing EBL/VRM must be selectable for editing by clicking near:
+
+- its start point
+- its target/end point
+- the EBL line between them
+
+The chart context menu uses the same geometry hit test, so the target
+crosshair/arc is not the only valid edit location.
+
 EBL/VRM actions:
 
+- Move start point
 - Move target
 - Move label
 - Reset label position
@@ -115,6 +152,7 @@ Persisted information includes:
 - colours
 - label size
 - manual label positions
+- yellow-note visibility
 
 State loading is delayed until OpenCPN navigation objects are available.
 
@@ -196,12 +234,18 @@ See [GPX_FORMAT.md](GPX_FORMAT.md).
 Chart context-menu registration is deferred until OpenCPN initialization has
 completed sufficiently for navigation objects and UI hooks to be safe.
 
+For Route Toolbar EBL/VRM objects, context editing must accept a click close to
+the start point, target point or EBL line.
+
 ## Rendering
 
 Supported:
 
 - wxDC overlay rendering
 - OpenGL overlay rendering
+
+Both rendering paths must implement route-leg labels and yellow-note visibility
+consistently.
 
 macOS OpenGL deprecation warnings are expected during compilation and are not
 build failures.
@@ -210,7 +254,7 @@ build failures.
 
 Route Toolbar must:
 
-- preserve route/waypoint/Mark relationships
+- preserve route/waypoint/Mark relationships until the user explicitly moves a linked EBL start
 - avoid duplicate planning objects during replace-import
 - avoid silently changing source route geometry
 - preserve valid persistent state
