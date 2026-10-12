@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${1:-0.5.8}"
+VERSION="${1:-0.5.9}"
 PLUGIN="${2:-build/libroute_toolbar_pi.dylib}"
 OUTDIR="${3:-dist}"
 

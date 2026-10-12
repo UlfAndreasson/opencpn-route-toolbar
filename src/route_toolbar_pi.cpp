@@ -48,7 +48,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 5;
-constexpr int kPluginVersionPatch = 8;
+constexpr int kPluginVersionPatch = 9;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kTurnAnchorPickRadiusNm = 0.025;
@@ -64,25 +64,43 @@ constexpr int kMaxLabelFontSize = 30;
 constexpr const char* kConfigPath = "/PlugIns/RouteToolbar";
 
 static const char* route_toolbar_xpm[] = {
-    "16 16 2 1",
+    "32 32 4 1",
     "  c None",
-    "D c #777777",
-    "                ",
-    "  DDD           ",
-    "  D D           ",
-    "  DDD           ",
-    "     D          ",
-    "      DDD       ",
-    "      D D       ",
-    "      DDD       ",
-    "         D      ",
-    "          DDD   ",
-    "          D D   ",
-    "          DDD   ",
-    "                ",
-    "                ",
-    "                ",
-    "                "};
+    "B c #2B2D2F",
+    "G c #989FA5",
+    "L c #CFD3D6",
+    "                                ",
+    "                                ",
+    "    LLLLLLLLLLLLLLLLLLLLLLLL    ",
+    "   LBBBBBBBBBBBBBBBBBBBBBBBBL   ",
+    "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+    "  LBBBBBGBBBBBBBBBBBBBBBBBBBBL  ",
+    "  LBBBBGBGBBBBBBBBBBBBBBBBBBBL  ",
+    "  LBBBGBBBGBBBBBBBBBBBBBGBBBBL  ",
+    "  LBBBBGGGBBBBBBBBBBBBBGBGBBBL  ",
+    "  LBBBBBGGBBBBBBBBBBBBGBBBGBBL  ",
+    "  LBBBBBBGGBBBBBBBBBBBBGGGBBBL  ",
+    "  LBBBBBBBGGBBBBBBBBBBGGGBBBBL  ",
+    "  LBBBBBBBBGGBBBBBBBBGGBBBBBBL  ",
+    "  LBBBBBBBBBGBBBBBBBGGBBBBBBBL  ",
+    "  LBBBBBBBBBGGBBBBBBGBBBBBBBBL  ",
+    "  LBBBBBBBBBBGGBBBBGGBBBBBBBBL  ",
+    "  LBBBBBBBBBBBGGGBGGBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBBGBGGBBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBGGBGGBBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBBGGGBBBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBBBGBBBBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+    "  LBBBBBBBBBBBBBBBBBBBBBBBBBBL  ",
+    "   LBBBBBBBBBBBBBBBBBBBBBBBBL   ",
+    "    LLLLLLLLLLLLLLLLLLLLLLLL    ",
+    "                                ",
+    "                                "};
 
 wxString EnsureToolbarSvg() {
   const wxString base = wxStandardPaths::Get().GetUserDataDir();

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.9 — 2026-10-12
+
+### Changed
+
+- Plugin Manager icon now matches the Route Toolbar chart-toolbar icon instead of using the old black route glyph
+- macOS Apple Silicon Plugin Manager package version advanced to 0.5.9 after successful imported-plugin testing
+
 ## 0.5.8 — 2026-10-12
 
 ### Changed
