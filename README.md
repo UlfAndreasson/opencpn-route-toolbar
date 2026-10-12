@@ -14,7 +14,7 @@ It combines:
 
 ## Current version
 
-**Route Toolbar 0.5.0**
+**Route Toolbar 0.5.1**
 
 Current development target:
 

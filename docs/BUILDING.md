@@ -6,7 +6,7 @@ Current development target:
 - Plugin API 1.21
 - wxWidgets 3.2
 - Apple Silicon arm64
-- Route Toolbar 0.5.0
+- Route Toolbar 0.5.1
 
 ## Prerequisites
 

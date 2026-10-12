@@ -48,7 +48,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 5;
-constexpr int kPluginVersionPatch = 0;
+constexpr int kPluginVersionPatch = 1;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kTurnAnchorPickRadiusNm = 0.025;
@@ -484,8 +484,11 @@ bool route_toolbar_pi::MouseEventHook(wxMouseEvent& event) {
   }
   if (!event.LeftDown() || !m_has_cursor) return false;
 
+  // Existing-object editing is only automatic while the EBL tool is idle.
+  // When Route EBL/VRM is active, a click must always be allowed to create a
+  // new EBL/VRM, even if it happens close to existing EBL geometry.
   if (m_dialog_visible && m_pil_mode == PilMode::Idle &&
-      (m_ebl_mode == EblMode::Idle || m_ebl_mode == EblMode::AwaitRoutePoint)) {
+      m_ebl_mode == EblMode::Idle) {
     const int existing = FindNearestEblGeometry(m_cursor_lat, m_cursor_lon, 0.05);
     if (existing >= 0) {
       m_ebl_mode = EblMode::Idle;
@@ -766,6 +769,17 @@ void route_toolbar_pi::ShowEblTargetActions(int index) {
       _("Route EBL / VRM"),
       _("What do you want to do with ") + name + _("?"),
       actions);
+
+  // wxWidgets/macOS can leave the modeless Route Toolbar visually disabled
+  // after a modal action dialog closes. Explicitly restore and repaint it
+  // before entering an interactive move operation.
+  if (m_dialog) {
+    m_dialog->Enable(true);
+    m_dialog->Show();
+    m_dialog->Raise();
+    m_dialog->Refresh();
+    m_dialog->Update();
+  }
 
   switch (selected) {
     case 0: BeginMoveEblStart(index); break;
