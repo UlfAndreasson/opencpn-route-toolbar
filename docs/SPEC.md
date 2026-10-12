@@ -24,7 +24,12 @@ Requirements:
 
 - true course shown as three digits followed by `°T`
 - distance shown with two decimals followed by `M`
-- label placed above the route leg when screen space permits
+- label follows the route-leg angle
+- shallow legs place the label immediately above the line
+- steep legs place the label immediately to the visual left of the line
+- label remains close to the line and does not clamp to viewport edges
+- leg info is rendered only while the source OpenCPN route is visible
+- leg info follows the global **Hide/View notes and leg info** control
 - labels do not alter route geometry
 - colour follows the normal route display colour available through OpenCPN plugin API 1.21
 
@@ -61,15 +66,15 @@ Requirements:
 - manual placement survives restart
 - configurable font size
 - off-screen target notes are hidden
-- all yellow notes can be hidden/viewed globally
-- hiding notes leaves EBL/VRM, PIL and TURN geometry visible
-- global note visibility survives restart
+- notes and leg info can be hidden/viewed globally
+- hiding notes/leg info leaves EBL/VRM, PIL and TURN geometry visible
+- global note/leg-info visibility survives restart
 
 ### Editing
 
 An EBL/VRM must be selectable near its start point, target/end point or the line between them.
 
-Available actions:
+Available actions include:
 
 - Move start point
 - Move target
@@ -97,7 +102,7 @@ Requirements:
 - multiple PILs may exist on one leg
 - graphical editing has a live preview
 - PIL uses a compact/tight dashed pattern
-- PIL geometry remains visible when yellow notes are globally hidden
+- PIL geometry remains visible when notes/leg info are globally hidden
 
 ## Route TURN
 
@@ -120,6 +125,8 @@ An optional planned rudder angle can be stored as a manual planning value. TURN 
 
 The manager supports:
 
+- Select all
+- multi-selection
 - Show selected
 - Hide selected
 - Show all
@@ -138,7 +145,7 @@ Persisted state includes:
 - route/waypoint/Mark/TURN associations
 - EBL/PIL/TURN colours
 - label size and manual positions
-- global yellow-note visibility
+- global notes/leg-info visibility
 
 State loading is delayed until OpenCPN navigation objects are available. An unloaded plugin must never overwrite valid persisted state with an empty object set during shutdown.
 
@@ -168,10 +175,14 @@ Package data can include:
 - TURN geometry and planning values
 - colours and label settings
 
-Import modes:
+Import behaviour:
 
-- Import as new
-- Replace existing
+- if the route does not exist in OpenCPN, import route + waypoints + Route Toolbar objects
+- if the route exists and has no Route Toolbar objects, attach EBL/PIL/TURN directly without prompting and without rewriting route/waypoints
+- if the route exists and already has Route Toolbar objects, **Replace existing** replaces only the Route Toolbar package
+- **Import as new** creates a new route copy with remapped waypoint identities and imported Route Toolbar objects
+
+OpenCPN remains the owner/editor of source routes and waypoints.
 
 See [GPX_FORMAT.md](GPX_FORMAT.md).
 
@@ -186,7 +197,7 @@ Supported:
 - wxDC overlay rendering
 - OpenGL overlay rendering
 
-Both paths must implement object visibility, yellow-note visibility and route-leg labels consistently. macOS OpenGL deprecation warnings are expected during compilation and are not build failures.
+Both paths must implement object visibility, note/leg-info visibility, route visibility and route-leg labels consistently. macOS OpenGL deprecation warnings are expected during compilation and are not build failures.
 
 ## Safety constraints
 
