@@ -68,17 +68,18 @@ struct ReportWaypoint {
 
 void route_toolbar_pi::ExportRouteReport() {
   CancelInteractiveTool();
-  wxWindow* parent = m_dialog ? static_cast<wxWindow*>(m_dialog)
-                              : m_parent_window;
 
-  wxArrayString formats;
-  formats.Add(_("PDF - A4 landscape"));
-  formats.Add(_("CSV - spreadsheet/data"));
-  wxSingleChoiceDialog dialog(
-      parent, _("Choose report format."), _("Route Report"), formats);
-  if (dialog.ShowModal() != wxID_OK) return;
+  wxArrayString actions;
+  actions.Add(_("Export PDF - A4 landscape"));
+  actions.Add(_("Export CSV - spreadsheet/data"));
 
-  if (dialog.GetSelection() == 0)
+  const int selected = ShowActionButtons(
+      _("Route Report"),
+      _("What do you want to create?"),
+      actions);
+  if (selected < 0) return;
+
+  if (selected == 0)
     ExportRoutePdfReport();
   else
     ExportRouteCsvReport();

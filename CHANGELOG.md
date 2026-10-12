@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.5 — 2026-10-12
+
+### Changed
+
+- route-leg course/distance labels use one consistent reading direction: rotate the screen left to read them
+- leg labels stay on the same side of the route line instead of alternating sides
+- Route Report uses action buttons for PDF/CSV instead of a choice field
+- Route GPX uses action buttons for export/import instead of a choice field
+- the visibility button is now labelled Hide/View notes and leg info
+
 ## 0.5.4 — 2026-10-12
 
 ### Changed

@@ -48,7 +48,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 5;
-constexpr int kPluginVersionPatch = 4;
+constexpr int kPluginVersionPatch = 5;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kTurnAnchorPickRadiusNm = 0.025;
@@ -280,6 +280,14 @@ wxString route_toolbar_pi::GetLongDescription() {
 }
 wxBitmap* route_toolbar_pi::GetPlugInBitmap() { return &m_toolbar_bitmap; }
 int route_toolbar_pi::GetToolbarToolCount() { return 1; }
+
+int route_toolbar_pi::ShowActionButtons(const wxString& title,
+                                        const wxString& prompt,
+                                        const wxArrayString& labels) {
+  return ShowRouteToolbarActionButtons(
+      m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
+      title, prompt, labels);
+}
 
 void route_toolbar_pi::OnToolbarToolCallback(int id) {
   if (id != m_toolbar_id) return;

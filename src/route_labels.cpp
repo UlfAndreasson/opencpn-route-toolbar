@@ -35,18 +35,17 @@ RouteLegLabelGeometry BuildRouteLegLabelGeometry(const wxPoint& a,
   const double length = std::hypot(dx, dy);
   if (length < 0.5) return {};
 
-  double ux = dx / length;
-  double uy = dy / length;
+  // Choose one canonical reading direction for every leg.  Screen-space Y
+  // grows downwards.  Keeping the baseline angle in [0, 180) means the text
+  // is always readable by rotating the screen counter-clockwise (to the left),
+  // never by turning it to the right.
+  double screen_angle = std::atan2(dy, dx);
+  if (screen_angle < 0.0) screen_angle += M_PI;
+  double ux = std::cos(screen_angle);
+  double uy = std::sin(screen_angle);
 
-  // Keep the text readable left-to-right while preserving the exact line
-  // direction. A purely vertical leg is oriented upward so the annotation
-  // naturally sits on the left side of the route line.
-  if (ux < 0.0 || (std::abs(ux) < 1e-9 && uy > 0.0)) {
-    ux = -ux;
-    uy = -uy;
-  }
-
-  // Screen-space normal pointing to the visual "upper/left" side of the leg.
+  // Always use the same side of the displayed leg.  This is the left/upper
+  // side after the corresponding counter-clockwise screen rotation.
   const double nx = uy;
   const double ny = -ux;
 

@@ -50,6 +50,8 @@ public:
   void ShowObjectManager();
   void ExportRouteReport();
   void RouteGpx();
+  int ShowActionButtons(const wxString& title, const wxString& prompt,
+                        const wxArrayString& labels);
   void ExportRouteGpxPackage();
   void ImportRouteGpxPackage();
   void ExportRouteCsvReport();
