@@ -31,7 +31,7 @@ Each OpenCPN route leg is annotated with true course and distance using the comp
 128°T  0.84 M
 ```
 
-The label follows the route-leg angle and is placed immediately above shallow legs or immediately to the visual left of steep legs. OpenCPN API 1.21 does not expose every per-route custom display colour to plugins, so Route Toolbar uses the normal OpenCPN route display colour available through the plugin API.
+The label follows the route-leg angle and is placed immediately above shallow legs or immediately to the visual left of steep legs. Leg info is shown only while the source OpenCPN route itself is visible, and it also follows the global **Hide/View notes and leg info** control. OpenCPN API 1.21 does not expose every per-route custom display colour to plugins, so Route Toolbar uses the normal OpenCPN route display colour available through the plugin API.
 
 ## Route EBL / VRM
 
@@ -79,9 +79,9 @@ TURN objects are persistent and can be used as EBL/VRM snap points. TURN data is
 
 **Route Objects...** lists saved EBL/VRM, PIL and TURN objects immediately when the dialog opens. Objects can be multi-selected, selected all at once, shown, hidden or deleted without deleting the source OpenCPN route.
 
-## Yellow notes
+## Notes and leg info
 
-The toolbar provides **Hide notes and leg info / View notes and leg info**. Hiding notes leaves EBL/VRM, PIL and TURN geometry visible, making it easier to inspect the route without information boxes obscuring the chart. The setting is persistent.
+The toolbar provides **Hide notes and leg info / View notes and leg info**. Hiding them leaves EBL/VRM, PIL and TURN geometry visible, making it easier to inspect the route without information boxes or leg labels obscuring the chart. The setting is persistent.
 
 ## Colours
 
@@ -106,7 +106,15 @@ The report includes route/waypoint information, course and distance, PIL offsets
 
 **Route GPX...** provides complete route-package export/import. The exported file is a normal GPX 1.1 document with Route Toolbar data in a namespaced `<extensions>` section.
 
-A package can contain route/waypoint identity, referenced Marks, EBL/VRM objects, PIL geometry, TURN geometry, colours and label settings. Import supports **Import as new** and **Replace existing**.
+A package can contain route/waypoint identity, referenced Marks, EBL/VRM objects, PIL geometry, TURN geometry, colours and label settings.
+
+Import behaviour:
+
+- if the route does not exist in OpenCPN, the route, waypoints and Route Toolbar objects are imported
+- if the route already exists and has no Route Toolbar objects, only the EBL/PIL/TURN package is attached to the existing route, without prompting or rewriting the route/waypoints
+- if the route already exists and already has Route Toolbar objects, **Replace existing** replaces only the Route Toolbar package while **Import as new** creates a new route copy
+
+OpenCPN remains the owner/editor of routes and waypoints.
 
 See [docs/GPX_FORMAT.md](docs/GPX_FORMAT.md).
 
