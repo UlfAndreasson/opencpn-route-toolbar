@@ -581,8 +581,10 @@ void route_toolbar_pi::DrawTurn(
                                    item.rudder_angle_deg,
                                    TurnSide(item.turn_angle_deg));
 
-  DrawLabel(dc, turn_label,
-            wxPoint(start_px.x + 10, start_px.y + 8));
+  if (m_notes_visible) {
+    DrawLabel(dc, turn_label,
+              wxPoint(start_px.x + 10, start_px.y + 8));
+  }
 
   dc.SetPen(old_pen);
   dc.SetBrush(old_brush);
@@ -656,7 +658,8 @@ void route_toolbar_pi::DrawTurnGL(
                                    item.rudder_angle_deg,
                                    TurnSide(item.turn_angle_deg));
 
-  DrawGlLabel(turn_label, start_px.x + 10, start_px.y + 8);
+  if (m_notes_visible)
+    DrawGlLabel(turn_label, start_px.x + 10, start_px.y + 8);
 }
 
 void route_toolbar_pi::LoadTurnPersistentState(

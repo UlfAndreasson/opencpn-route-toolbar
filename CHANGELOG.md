@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1 — 2026-10-12
+
+### Fixed
+
+- Route TURN yellow notes now follow the global **Hide/View all yellow notes** control
+- starting a new Route EBL/VRM no longer opens the edit menu when clicking near existing EBL geometry
+- Route Toolbar is explicitly restored and repainted after closing the EBL/VRM edit action dialog on macOS, preventing the blank/grey toolbar state before graphical move operations
+
 ## 0.5.0 — 2026-10-12
 
 ### Added
