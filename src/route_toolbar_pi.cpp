@@ -48,7 +48,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 5;
-constexpr int kPluginVersionPatch = 9;
+constexpr int kPluginVersionPatch = 10;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kTurnAnchorPickRadiusNm = 0.025;
@@ -402,6 +402,12 @@ void route_toolbar_pi::SetCursorLatLon(double lat, double lon) {
 }
 
 bool route_toolbar_pi::MouseEventHook(wxMouseEvent& event) {
+
+  if (event.RightDown() && m_has_cursor) {
+    m_context_click_lat = m_cursor_lat;
+    m_context_click_lon = m_cursor_lon;
+    m_has_context_click = true;
+  }
 
   if (m_turn_mode != TurnMode::Idle) {
     if (event.RightDown()) {
@@ -785,8 +791,6 @@ void route_toolbar_pi::ShowEblTargetActions(int index) {
   wxArrayString actions;
   actions.Add(_("Move start point"));
   actions.Add(_("Move target"));
-  actions.Add(_("Move label"));
-  actions.Add(_("Reset label position"));
   actions.Add(_("Rename"));
   actions.Add(_("Delete EBL/VRM"));
 
@@ -810,10 +814,8 @@ void route_toolbar_pi::ShowEblTargetActions(int index) {
   switch (selected) {
     case 0: BeginMoveEblStart(index); break;
     case 1: BeginMoveEblTarget(index); break;
-    case 2: BeginMoveEblLabel(index); break;
-    case 3: ResetEblLabel(index); break;
-    case 4: RenameEblTarget(index); break;
-    case 5: DeleteEblTarget(index); break;
+    case 2: RenameEblTarget(index); break;
+    case 3: DeleteEblTarget(index); break;
     default: break;
   }
 }

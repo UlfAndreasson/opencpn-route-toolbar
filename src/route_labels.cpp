@@ -173,7 +173,11 @@ wxColour route_toolbar_pi::ResolveRouteColour(const wxString&) const {
 }
 
 void route_toolbar_pi::DrawRouteLegLabels(wxDC& dc, PlugIn_ViewPort* vp) const {
-  m_last_viewport = vp;
+  static PlugIn_ViewPort stable_viewport;
+  if (vp) {
+    stable_viewport = *vp;
+    m_last_viewport = &stable_viewport;
+  }
   if (!vp || !vp->bValid || !m_leg_info_visible) return;
 
   const wxFont old_font = dc.GetFont();
@@ -297,7 +301,11 @@ void route_toolbar_pi::DrawGlText(const wxString& label, int x, int y,
 }
 
 void route_toolbar_pi::DrawRouteLegLabelsGL(PlugIn_ViewPort* vp) const {
-  m_last_viewport = vp;
+  static PlugIn_ViewPort stable_viewport;
+  if (vp) {
+    stable_viewport = *vp;
+    m_last_viewport = &stable_viewport;
+  }
   if (!vp || !vp->bValid || !m_leg_info_visible) return;
 
   const wxFont font = GetEblLabelFont();

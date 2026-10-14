@@ -370,6 +370,10 @@ private:
   int m_move_original_dx_px{0};
   int m_move_original_dy_px{0};
   RouteToolbarLabelMoveFilter* m_label_move_filter{nullptr};
+  // OpenCPN owns the viewport passed to render callbacks. Keep an owned copy
+  // for mouse hit-testing between render callbacks instead of retaining a
+  // pointer to OpenCPN's temporary viewport object.
+  mutable PlugIn_ViewPort m_last_viewport_storage;
   mutable PlugIn_ViewPort* m_last_viewport{nullptr};
 
   wxTimer* m_delayed_state_load{nullptr};
@@ -383,5 +387,11 @@ private:
   double m_cursor_lat{0.0};
   double m_cursor_lon{0.0};
   bool m_has_cursor{false};
+
+  // Preserve where the chart context menu was opened. The cursor may move
+  // while the user selects an item from the popup/action dialog.
+  double m_context_click_lat{0.0};
+  double m_context_click_lon{0.0};
+  bool m_has_context_click{false};
   bool m_state_loaded{false};
 };

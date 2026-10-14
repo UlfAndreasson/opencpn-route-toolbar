@@ -130,29 +130,93 @@ void route_toolbar_pi::UpdateContextMenuHit() {
 }
 
 void route_toolbar_pi::OnContextMenuItemCallback(int id) {
-  if (!m_has_cursor) return;
+  if (!m_has_cursor && !m_has_context_click) return;
+
   wxWindow* parent = m_dialog ? static_cast<wxWindow*>(m_dialog)
                               : m_parent_window;
 
+  const double click_lat =
+      m_has_context_click ? m_context_click_lat : m_cursor_lat;
+  const double click_lon =
+      m_has_context_click ? m_context_click_lon : m_cursor_lon;
+
+  wxPoint click_px;
+  bool have_click_px = false;
+
+  if (m_last_viewport) {
+    GetCanvasPixLL(m_last_viewport, &click_px, click_lat, click_lon);
+    have_click_px = true;
+  }
+
   if (id == m_context_ebl_id) {
-    const int ebl = FindNearestEblGeometry(m_cursor_lat, m_cursor_lon, 0.05);
+    int ebl = -1;
+
+    // First test the exact visible yellow label rectangle.
+    if (have_click_px && m_notes_visible) {
+      for (int i = static_cast<int>(m_ebl_vrms.size()) - 1; i >= 0; --i) {
+        const RouteEblVrm& item =
+            m_ebl_vrms[static_cast<size_t>(i)];
+
+        if (!item.visible) continue;
+
+        if (EblLabelRect(m_last_viewport, item).Contains(click_px)) {
+          ebl = i;
+          break;
+        }
+      }
+    }
+
+    // Otherwise retain the existing geometry-based behaviour.
+    if (ebl < 0)
+      ebl = FindNearestEblGeometry(click_lat, click_lon, 0.05);
+
     if (ebl >= 0) {
       ShowEblTargetActions(ebl);
     } else {
-      wxMessageBox(_("No Route Toolbar EBL/VRM start point, target or line was found close to the right-click position."),
-                   _("Route EBL / VRM"), wxOK | wxICON_INFORMATION, parent);
+      wxMessageBox(
+          _("No Route Toolbar EBL/VRM label, start point, target or line "
+            "was found close to the right-click position."),
+          _("Route EBL / VRM"),
+          wxOK | wxICON_INFORMATION,
+          parent);
     }
+
+    m_has_context_click = false;
     return;
   }
 
   if (id == m_context_pil_id) {
-    const int pil = FindNearestPil(m_cursor_lat, m_cursor_lon, 0.05);
+    int pil = -1;
+
+    if (have_click_px && m_notes_visible) {
+      for (int i = static_cast<int>(m_pils.size()) - 1; i >= 0; --i) {
+        const RoutePil& item =
+            m_pils[static_cast<size_t>(i)];
+
+        if (!item.visible) continue;
+
+        if (PilLabelRect(m_last_viewport, item).Contains(click_px)) {
+          pil = i;
+          break;
+        }
+      }
+    }
+
+    if (pil < 0)
+      pil = FindNearestPil(click_lat, click_lon, 0.05);
+
     if (pil >= 0) {
       ShowPilActions(pil);
     } else {
-      wxMessageBox(_("No Route Toolbar PIL line was found close to the right-click position."),
-                   _("Route PIL"), wxOK | wxICON_INFORMATION, parent);
+      wxMessageBox(
+          _("No Route Toolbar PIL label or line was found close to "
+            "the right-click position."),
+          _("Route PIL"),
+          wxOK | wxICON_INFORMATION,
+          parent);
     }
+
+    m_has_context_click = false;
     return;
   }
 }
