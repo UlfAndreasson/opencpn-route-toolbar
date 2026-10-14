@@ -1,0 +1,39 @@
+name: Temporary v0.5.10 source version bump
+
+on:
+  push:
+    branches:
+      - release/v0.5.10-alpha1
+    paths:
+      - '.github/workflows/tmp-bump-v0510.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  bump-source-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/v0.5.10-alpha1
+      - name: Bump plugin-reported version
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/route_toolbar_pi.cpp')
+          s = p.read_text()
+          old = 'constexpr int kPluginVersionPatch = 9;'
+          new = 'constexpr int kPluginVersionPatch = 10;'
+          if old not in s and new not in s:
+              raise SystemExit('version constant not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Commit bump
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/route_toolbar_pi.cpp
+          git commit -m 'Bump plugin version to 0.5.10'
+          git push origin HEAD:release/v0.5.10-alpha1
