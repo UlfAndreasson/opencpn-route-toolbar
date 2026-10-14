@@ -14,6 +14,7 @@ class route_toolbar_pi;
 class RouteToolbarDialog final : public wxDialog {
 public:
   RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugin);
+  ~RouteToolbarDialog() override;
   void SetStatus(const wxString& text);
   void SetToolButtons(bool ebl_active, bool pil_active, bool turn_active);
   void SetMoveLabelsActive(bool active);
