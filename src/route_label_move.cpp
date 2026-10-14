@@ -64,20 +64,30 @@ public:
         type != wxEVT_MOTION)
       return wxEventFilter::Event_Skip;
 
-    // Mouse events delivered by OpenCPN don't necessarily use the canvas
-    // itself as EventObject; on macOS they can originate from a child window.
-    // Accept the canvas and any of its descendants, otherwise Move labels
-    // never gets the click and OpenCPN pans the chart instead.
+    auto* mouse = dynamic_cast<wxMouseEvent*>(&event);
     auto* source = dynamic_cast<wxWindow*>(event.GetEventObject());
-    if (!source ||
-        (source != m_owner->m_parent_window &&
-         !m_owner->m_parent_window->IsDescendant(source)))
+    if (!mouse || !source) return wxEventFilter::Event_Skip;
+
+    // Don't swallow clicks in the Route Toolbar window itself.
+    if (m_owner->m_dialog &&
+        (source == m_owner->m_dialog || m_owner->m_dialog->IsDescendant(source)))
       return wxEventFilter::Event_Skip;
 
-    auto* mouse = dynamic_cast<wxMouseEvent*>(&event);
-    if (!mouse) return wxEventFilter::Event_Skip;
+    // On macOS OpenCPN mouse events may originate from a sibling/GL child
+    // rather than GetOCPNCanvasWindow() itself. Convert the event position via
+    // screen coordinates into canvas coordinates and accept it if it lands on
+    // the chart canvas. This also makes the label hit-test use the same pixel
+    // coordinate system as GetCanvasPixLL().
+    const wxPoint screen_pos = source->ClientToScreen(mouse->GetPosition());
+    const wxPoint canvas_pos = m_owner->m_parent_window->ScreenToClient(screen_pos);
+    const wxSize canvas_size = m_owner->m_parent_window->GetClientSize();
+    if (canvas_pos.x < 0 || canvas_pos.y < 0 ||
+        canvas_pos.x >= canvas_size.x || canvas_pos.y >= canvas_size.y)
+      return wxEventFilter::Event_Skip;
 
-    m_owner->OnMoveLabelsMouse(*mouse);
+    wxMouseEvent translated(*mouse);
+    translated.SetPosition(canvas_pos);
+    m_owner->OnMoveLabelsMouse(translated);
     return wxEventFilter::Event_Processed;
   }
 
