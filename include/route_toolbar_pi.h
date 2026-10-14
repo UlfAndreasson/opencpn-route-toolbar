@@ -370,6 +370,10 @@ private:
   int m_move_original_dx_px{0};
   int m_move_original_dy_px{0};
   RouteToolbarLabelMoveFilter* m_label_move_filter{nullptr};
+  // OpenCPN owns the viewport passed to render callbacks. Keep an owned copy
+  // for mouse hit-testing between render callbacks instead of retaining a
+  // pointer to OpenCPN's temporary viewport object.
+  mutable PlugIn_ViewPort m_last_viewport_storage;
   mutable PlugIn_ViewPort* m_last_viewport{nullptr};
 
   wxTimer* m_delayed_state_load{nullptr};
