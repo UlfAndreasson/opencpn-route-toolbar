@@ -41,6 +41,7 @@ add_library(route_toolbar_pi SHARED
   src/route_turn.cpp
   src/route_context.cpp
   src/route_labels.cpp
+  src/route_label_move.cpp
 )
 
 target_include_directories(route_toolbar_pi PRIVATE include)
