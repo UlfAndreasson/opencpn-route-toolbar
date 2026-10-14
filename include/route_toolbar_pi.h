@@ -11,6 +11,7 @@
 #include "ocpn_plugin.h"
 
 class RouteToolbarDialog;
+class RouteToolbarLabelMoveFilter;
 class wxFileConfig;
 class wxTimer;
 class wxMenu;
@@ -67,7 +68,7 @@ public:
   int GetLabelFontSize() const { return m_label_font_size; }
   void SetLabelFontSize(int point_size);
 
-  // User-facing terminology is "labels".  m_notes_visible is retained as the
+  // User-facing terminology is "labels". m_notes_visible is retained as the
   // internal storage name for backwards-compatible config/state handling.
   bool GetLabelsVisible() const { return m_notes_visible; }
   void SetLabelsVisible(bool visible) {
@@ -106,6 +107,8 @@ public:
   }
 
 private:
+  friend class RouteToolbarLabelMoveFilter;
+
   struct RouteWaypointHit {
     bool found{false};
     bool is_mark{false};
@@ -366,7 +369,8 @@ private:
   bool m_move_original_manual{false};
   int m_move_original_dx_px{0};
   int m_move_original_dy_px{0};
-  PlugIn_ViewPort* m_last_viewport{nullptr};
+  RouteToolbarLabelMoveFilter* m_label_move_filter{nullptr};
+  mutable PlugIn_ViewPort* m_last_viewport{nullptr};
 
   wxTimer* m_delayed_state_load{nullptr};
   int m_label_font_size{14};
