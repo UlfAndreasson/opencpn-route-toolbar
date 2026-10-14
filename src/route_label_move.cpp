@@ -7,6 +7,8 @@
 #include <cmath>
 
 #include <wx/dcmemory.h>
+#include <wx/event.h>
+#include <wx/eventfilter.h>
 #include <wx/fileconf.h>
 
 namespace {
@@ -47,6 +49,42 @@ wxString TurnLabel(double turn_angle_deg, double radius_nm,
 }
 
 }  // namespace
+
+class RouteToolbarLabelMoveFilter final : public wxEventFilter {
+public:
+  explicit RouteToolbarLabelMoveFilter(route_toolbar_pi* owner)
+      : m_owner(owner) {}
+
+  int FilterEvent(wxEvent& event) override {
+    if (!m_owner || !m_owner->m_move_labels_active)
+      return wxEventFilter::Event_Skip;
+
+    const wxEventType type = event.GetEventType();
+    if (type != wxEVT_LEFT_DOWN && type != wxEVT_RIGHT_DOWN &&
+        type != wxEVT_MOTION)
+      return wxEventFilter::Event_Skip;
+
+    auto* mouse = dynamic_cast<wxMouseEvent*>(&event);
+    auto* source = dynamic_cast<wxWindow*>(event.GetEventObject());
+    if (!mouse || !source) return wxEventFilter::Event_Skip;
+
+    // Keep the modeless Route Toolbar usable while Move labels is active.
+    if (m_owner->m_dialog &&
+        (source == m_owner->m_dialog || m_owner->m_dialog->IsDescendant(source)))
+      return wxEventFilter::Event_Skip;
+
+    // We intentionally do not use wxMouseEvent pixel coordinates here.
+    // On macOS/OpenGL they can be relative to a different OpenCPN child
+    // window than GetCanvasPixLL().  OpenCPN's SetCursorLatLon callback gives
+    // us the authoritative chart cursor; OnMoveLabelsMouse converts that back
+    // to pixels in exactly the same viewport coordinate system as the labels.
+    m_owner->OnMoveLabelsMouse(*mouse);
+    return wxEventFilter::Event_Processed;
+  }
+
+private:
+  route_toolbar_pi* m_owner{nullptr};
+};
 
 void route_toolbar_pi::LoadUiPreferences() {
   if (m_ui_preferences_loaded) return;
@@ -92,6 +130,11 @@ void route_toolbar_pi::BeginMoveLabels() {
   m_move_label_type = LabelMoveType::None;
   m_move_label_index = -1;
 
+  if (!m_label_move_filter) {
+    m_label_move_filter = new RouteToolbarLabelMoveFilter(this);
+    wxEvtHandler::AddFilter(m_label_move_filter);
+  }
+
   SetStatus(_("Move labels: click any EBL/VRM, PIL or TURN/WO label, move it, then click again to place it. Continue with another label, or right-click to finish."));
 }
 
@@ -102,6 +145,12 @@ void route_toolbar_pi::EndMoveLabels(bool cancel_current) {
   m_move_label_type = LabelMoveType::None;
   m_move_label_index = -1;
   m_move_labels_active = false;
+
+  if (m_label_move_filter) {
+    wxEvtHandler::RemoveFilter(m_label_move_filter);
+    delete m_label_move_filter;
+    m_label_move_filter = nullptr;
+  }
 
   if (m_dialog) m_dialog->SetMoveLabelsActive(false);
   if (m_parent_window) RequestRefresh(m_parent_window);
@@ -310,5 +359,10 @@ void route_toolbar_pi::OnMoveLabelsMouse(wxMouseEvent& event) {
       TryBeginLabelMove(mouse);
     else
       CommitActiveLabelPosition();
+    return;
   }
+
+  if ((event.Moving() || event.Dragging()) &&
+      m_move_label_type != LabelMoveType::None)
+    UpdateActiveLabelPosition(mouse);
 }
