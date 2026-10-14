@@ -47,6 +47,9 @@ public:
   void BeginEblVrm();
   void BeginPil();
   void BeginTurn();
+  void BeginMoveLabels();
+  void EndMoveLabels(bool cancel_current = false);
+  bool GetMoveLabelsActive() const { return m_move_labels_active; }
   void ShowObjectManager();
   void ExportRouteReport();
   void RouteGpx();
@@ -64,13 +67,21 @@ public:
   int GetLabelFontSize() const { return m_label_font_size; }
   void SetLabelFontSize(int point_size);
 
-  bool GetNotesVisible() const { return m_notes_visible; }
-  void SetNotesVisible(bool visible) {
+  // User-facing terminology is "labels".  m_notes_visible is retained as the
+  // internal storage name for backwards-compatible config/state handling.
+  bool GetLabelsVisible() const { return m_notes_visible; }
+  void SetLabelsVisible(bool visible) {
     if (m_notes_visible == visible) return;
     m_notes_visible = visible;
     SavePersistentState();
     if (m_parent_window) RequestRefresh(m_parent_window);
   }
+  bool GetNotesVisible() const { return GetLabelsVisible(); }
+  void SetNotesVisible(bool visible) { SetLabelsVisible(visible); }
+
+  bool GetLegInfoVisible() const { return m_leg_info_visible; }
+  void SetLegInfoVisible(bool visible);
+  void LoadUiPreferences();
 
   const wxColour& GetEblColour() const { return m_ebl_colour; }
   const wxColour& GetPilColour() const { return m_pil_colour; }
@@ -178,6 +189,9 @@ private:
     wxString from_name;
     wxString to_guid;
     wxString to_name;
+    bool label_manual{false};
+    int label_dx_px{12};
+    int label_dy_px{-30};
   };
 
   struct RouteTurn {
@@ -206,6 +220,9 @@ private:
     wxString prev_name;
     wxString next_guid;
     wxString next_name;
+    bool label_manual{false};
+    int label_dx_px{10};
+    int label_dy_px{8};
   };
 
   enum class EblMode {
@@ -219,6 +236,7 @@ private:
 
   enum class PilMode { Idle, AwaitLeg, AwaitOffsetPoint, MoveExistingAnchor };
   enum class TurnMode { Idle, AwaitWaypoint };
+  enum class LabelMoveType { None, Ebl, Pil, Turn };
 
   void ShowToolWindow();
   void HideToolWindow();
@@ -303,6 +321,15 @@ private:
   void DrawGlLabel(const wxString& label, int x, int y) const;
   static double NormalizeBearing(double bearing);
 
+  void OnMoveLabelsMouse(wxMouseEvent& event);
+  bool TryBeginLabelMove(const wxPoint& mouse);
+  void UpdateActiveLabelPosition(const wxPoint& mouse);
+  void RestoreActiveLabelPosition();
+  void CommitActiveLabelPosition();
+  wxRect EblLabelRect(PlugIn_ViewPort* vp, const RouteEblVrm& item) const;
+  wxRect PilLabelRect(PlugIn_ViewPort* vp, const RoutePil& item) const;
+  wxRect TurnLabelRect(PlugIn_ViewPort* vp, const RouteTurn& item) const;
+
   wxWindow* m_parent_window{nullptr};
   RouteToolbarDialog* m_dialog{nullptr};
   int m_toolbar_id{-1};
@@ -331,9 +358,21 @@ private:
   std::vector<RouteTurn> m_turns;
   double m_default_turn_radius_nm{0.10};
 
+  bool m_move_labels_active{false};
+  LabelMoveType m_move_label_type{LabelMoveType::None};
+  int m_move_label_index{-1};
+  int m_label_grab_dx_px{0};
+  int m_label_grab_dy_px{0};
+  bool m_move_original_manual{false};
+  int m_move_original_dx_px{0};
+  int m_move_original_dy_px{0};
+  PlugIn_ViewPort* m_last_viewport{nullptr};
+
   wxTimer* m_delayed_state_load{nullptr};
   int m_label_font_size{14};
   bool m_notes_visible{true};
+  bool m_leg_info_visible{true};
+  bool m_ui_preferences_loaded{false};
   wxColour m_ebl_colour{210, 0, 220};
   wxColour m_pil_colour{0, 105, 125};
   wxColour m_turn_colour{255, 125, 0};
