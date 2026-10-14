@@ -26,14 +26,13 @@ constexpr double kPilMaxOffsetNm = 5.0;
 constexpr int kPilDashSegments = 56;
 
 struct XY {
-  double x{0.0};  // east, NM
-  double y{0.0};  // north, NM
+  double x{0.0};
+  double y{0.0};
 };
 
 XY ToLocalNm(double lat, double lon, double ref_lat, double ref_lon) {
   const double cos_lat = std::max(0.01, std::cos(ref_lat * kPi / 180.0));
-  return {(lon - ref_lon) * 60.0 * cos_lat,
-          (lat - ref_lat) * 60.0};
+  return {(lon - ref_lon) * 60.0 * cos_lat, (lat - ref_lat) * 60.0};
 }
 
 double DistancePointToSegmentNm(const XY& p, const XY& a, const XY& b) {
@@ -196,6 +195,10 @@ void route_toolbar_pi::CompletePil(double anchor_lat, double anchor_lon) {
 
   if (m_edit_pil_index >= 0 &&
       static_cast<size_t>(m_edit_pil_index) < m_pils.size()) {
+    const RoutePil& old = m_pils[static_cast<size_t>(m_edit_pil_index)];
+    item.label_manual = old.label_manual;
+    item.label_dx_px = old.label_dx_px;
+    item.label_dy_px = old.label_dy_px;
     m_pils[static_cast<size_t>(m_edit_pil_index)] = item;
     SavePersistentState();
     SetStatus(wxString::Format(_("PIL moved to %+.2f NM (%s)."),
@@ -270,6 +273,10 @@ bool route_toolbar_pi::CommitMovePilAnchor(double anchor_lat,
     return true;
   }
 
+  const RoutePil& old = m_pils[static_cast<size_t>(m_edit_pil_index)];
+  moved.label_manual = old.label_manual;
+  moved.label_dx_px = old.label_dx_px;
+  moved.label_dy_px = old.label_dy_px;
   m_pils[static_cast<size_t>(m_edit_pil_index)] = moved;
   SavePersistentState();
   SetStatus(wxString::Format(_("PIL moved to %+.2f NM (%s)."),
@@ -312,12 +319,15 @@ void route_toolbar_pi::DrawPil(wxDC& dc, PlugIn_ViewPort* vp,
     const wxString label = PilLabel(item.offset_nm);
     dc.SetFont(GetEblLabelFont());
     const wxSize text = dc.GetTextExtent(label);
-    const wxPoint pos(anchor_px.x + 12, anchor_px.y - text.y - 10);
+    const int box_w = text.x + 8;
+    const int box_h = text.y + 6;
+    const wxPoint box(anchor_px.x + (item.label_manual ? item.label_dx_px : 12),
+                      anchor_px.y + (item.label_manual ? item.label_dy_px : -30));
     dc.SetPen(*wxTRANSPARENT_PEN);
     dc.SetBrush(wxBrush(wxColour(205, 245, 245)));
-    dc.DrawRectangle(pos.x - 4, pos.y - 3, text.x + 8, text.y + 6);
+    dc.DrawRectangle(box.x, box.y, box_w, box_h);
     dc.SetTextForeground(*wxBLACK);
-    dc.DrawText(label, pos);
+    dc.DrawText(label, box.x + 4, box.y + 3);
   }
 
   dc.SetPen(old_pen);
@@ -343,7 +353,6 @@ void route_toolbar_pi::DrawPilGL(PlugIn_ViewPort* vp, const RoutePil& item,
 
   glColor4ub(m_pil_colour.Red(), m_pil_colour.Green(), m_pil_colour.Blue(),
              preview ? 190 : 255);
-
   glDisable(GL_TEXTURE_2D);
   glLineWidth(preview ? 1.0f : 2.0f);
 
@@ -367,9 +376,11 @@ void route_toolbar_pi::DrawPilGL(PlugIn_ViewPort* vp, const RoutePil& item,
   }
   glEnd();
 
-  if (m_notes_visible)
-    DrawGlLabel(PilLabel(item.offset_nm), anchor_px.x + 12,
-                anchor_px.y - 30);
+  if (m_notes_visible) {
+    const int x = anchor_px.x + (item.label_manual ? item.label_dx_px : 12);
+    const int y = anchor_px.y + (item.label_manual ? item.label_dy_px : -30);
+    DrawGlLabel(PilLabel(item.offset_nm), x, y);
+  }
 }
 
 void route_toolbar_pi::LoadPilPersistentState(wxFileConfig* config) {
@@ -393,6 +404,13 @@ void route_toolbar_pi::LoadPilPersistentState(wxFileConfig* config) {
       continue;
 
     config->Read(prefix + "Visible", &item.visible, true);
+    config->Read(prefix + "LabelManual", &item.label_manual, false);
+    long label_dx = 12;
+    long label_dy = -30;
+    config->Read(prefix + "LabelDxPx", &label_dx, 12L);
+    config->Read(prefix + "LabelDyPx", &label_dy, -30L);
+    item.label_dx_px = static_cast<int>(label_dx);
+    item.label_dy_px = static_cast<int>(label_dy);
 
     long leg_index = 0;
     config->Read(prefix + "LegIndex", &leg_index, 0L);
@@ -417,14 +435,17 @@ void route_toolbar_pi::LoadPilPersistentState(wxFileConfig* config) {
     leg.from_name = item.from_name;
     leg.to_guid = item.to_guid;
     leg.to_name = item.to_name;
-    DistanceBearingMercator_Plugin(
-        leg.end_lat, leg.end_lon, leg.start_lat, leg.start_lon,
-        &leg.course_true, &leg.distance_nm);
+    DistanceBearingMercator_Plugin(leg.end_lat, leg.end_lon, leg.start_lat,
+                                   leg.start_lon, &leg.course_true,
+                                   &leg.distance_nm);
     leg.course_true = NormalizeBearing(leg.course_true);
 
     RoutePil rebuilt;
     if (BuildPilFromAnchor(leg, item.anchor_lat, item.anchor_lon, rebuilt)) {
       rebuilt.visible = item.visible;
+      rebuilt.label_manual = item.label_manual;
+      rebuilt.label_dx_px = item.label_dx_px;
+      rebuilt.label_dy_px = item.label_dy_px;
       m_pils.push_back(rebuilt);
     }
   }
@@ -456,5 +477,8 @@ void route_toolbar_pi::SavePilPersistentState(wxFileConfig* config) const {
     config->Write(prefix + "FromName", item.from_name);
     config->Write(prefix + "ToGuid", item.to_guid);
     config->Write(prefix + "ToName", item.to_name);
+    config->Write(prefix + "LabelManual", item.label_manual);
+    config->Write(prefix + "LabelDxPx", static_cast<long>(item.label_dx_px));
+    config->Write(prefix + "LabelDyPx", static_cast<long>(item.label_dy_px));
   }
 }
