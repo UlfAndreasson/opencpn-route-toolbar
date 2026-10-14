@@ -56,13 +56,22 @@ public:
       : m_owner(owner) {}
 
   int FilterEvent(wxEvent& event) override {
-    if (!m_owner || !m_owner->m_move_labels_active ||
-        event.GetEventObject() != m_owner->m_parent_window)
+    if (!m_owner || !m_owner->m_move_labels_active || !m_owner->m_parent_window)
       return wxEventFilter::Event_Skip;
 
     const wxEventType type = event.GetEventType();
     if (type != wxEVT_LEFT_DOWN && type != wxEVT_RIGHT_DOWN &&
         type != wxEVT_MOTION)
+      return wxEventFilter::Event_Skip;
+
+    // Mouse events delivered by OpenCPN don't necessarily use the canvas
+    // itself as EventObject; on macOS they can originate from a child window.
+    // Accept the canvas and any of its descendants, otherwise Move labels
+    // never gets the click and OpenCPN pans the chart instead.
+    auto* source = dynamic_cast<wxWindow*>(event.GetEventObject());
+    if (!source ||
+        (source != m_owner->m_parent_window &&
+         !m_owner->m_parent_window->IsDescendant(source)))
       return wxEventFilter::Event_Skip;
 
     auto* mouse = dynamic_cast<wxMouseEvent*>(&event);
@@ -205,8 +214,6 @@ bool route_toolbar_pi::TryBeginLabelMove(const wxPoint& mouse) {
     m_move_original_dy_px = dy;
   };
 
-  // Render order is TURN -> PIL -> EBL, so test in reverse order to pick the
-  // visually topmost label when boxes overlap.
   for (int i = static_cast<int>(m_ebl_vrms.size()) - 1; i >= 0; --i) {
     const auto& item = m_ebl_vrms[static_cast<size_t>(i)];
     if (!item.visible) continue;
