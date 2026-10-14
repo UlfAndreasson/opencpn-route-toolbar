@@ -155,6 +155,10 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   Bind(wxEVT_CLOSE_WINDOW, &RouteToolbarDialog::OnClose, this);
 }
 
+RouteToolbarDialog::~RouteToolbarDialog() {
+  if (m_plugin) m_plugin->EndMoveLabels(true);
+}
+
 void RouteToolbarDialog::SetStatus(const wxString& text) {
   if (!m_status) return;
   m_status->SetLabel(text);
