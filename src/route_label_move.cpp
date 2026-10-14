@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include <wx/app.h>
 #include <wx/dcmemory.h>
@@ -51,11 +52,6 @@ wxString TurnLabel(double turn_angle_deg, double radius_nm,
 
 }  // namespace
 
-// Important: this filter must NOT consume normal left-button/motion events.
-// OpenCPN itself needs to receive them first so SetCursorLatLon() is updated
-// in the same native chart-canvas pipeline used by EBL/PIL/TURN.  Earlier
-// versions returned Event_Processed here, so our hit-test was deliberately
-// preventing OpenCPN from updating the very cursor position we depended on.
 class RouteToolbarLabelMoveFilter final : public wxEventFilter {
 public:
   explicit RouteToolbarLabelMoveFilter(route_toolbar_pi* owner)
@@ -74,21 +70,15 @@ public:
     auto* source = dynamic_cast<wxWindow*>(event.GetEventObject());
     if (!mouse || !source) return wxEventFilter::Event_Skip;
 
-    // Keep the modeless Route Toolbar usable while Move labels is active.
     if (m_owner->m_dialog &&
         (source == m_owner->m_dialog || m_owner->m_dialog->IsDescendant(source)))
       return wxEventFilter::Event_Skip;
 
-    // Right-click is only an exit command and does not need a fresh cursor.
-    // Consume it so OpenCPN does not also open the chart context menu.
     if (mouse->RightDown()) {
       m_owner->OnMoveLabelsMouse(*mouse);
       return wxEventFilter::Event_Processed;
     }
 
-    // Let OpenCPN process the event first.  Then run our action on the next
-    // event-loop turn, when SetCursorLatLon() reflects this exact mouse event.
-    // Copy the event: the original object is not valid after FilterEvent().
     if (wxTheApp) {
       wxMouseEvent deferred(*mouse);
       route_toolbar_pi* owner = m_owner;
@@ -270,8 +260,6 @@ bool route_toolbar_pi::TryBeginLabelMove(const wxPoint& mouse) {
     }
   }
 
-  // Include the nearest label rectangle in the diagnostic.  This makes any
-  // remaining coordinate mismatch immediately visible without guessing.
   wxString nearest = _("none");
   long best_d2 = std::numeric_limits<long>::max();
   auto inspect = [&](const wxString& name, const wxRect& r) {
@@ -399,9 +387,6 @@ void route_toolbar_pi::OnMoveLabelsMouse(wxMouseEvent& event) {
     return;
   }
 
-  // This is intentionally based on OpenCPN's chart cursor, not wx window or
-  // screen coordinates.  The deferred filter above guarantees OpenCPN has
-  // processed the corresponding native mouse event before we read it.
   if (!m_has_cursor) return;
   wxPoint mouse;
   GetCanvasPixLL(m_last_viewport, &mouse, m_cursor_lat, m_cursor_lon);
