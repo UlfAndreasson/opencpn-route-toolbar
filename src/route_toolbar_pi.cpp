@@ -205,7 +205,13 @@ int ShowRouteToolbarActionButtons(wxWindow* parent,
   dialog.SetMinSize(wxSize(380, dialog.GetSize().GetHeight()));
   dialog.CentreOnParent();
   const int result = dialog.ShowModal();
-  return result > 0 ? result - 1 : -1;
+
+  // wxID_CANCEL is a positive wxWidgets ID. Treat Cancel explicitly
+  // as cancellation instead of converting it to a valid action index.
+  if (result == wxID_CANCEL || result <= 0)
+    return -1;
+
+  return result - 1;
 }
 
 
