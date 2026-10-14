@@ -349,10 +349,22 @@ void route_toolbar_pi::OnMoveLabelsMouse(wxMouseEvent& event) {
     return;
   }
 
-  // Use the actual global mouse position and convert it directly to the
-  // OpenCPN canvas. This avoids macOS/OpenGL child-window coordinate systems
-  // and avoids SetCursorLatLon timing/lag entirely.
-  const wxPoint mouse = m_parent_window->ScreenToClient(wxGetMousePosition());
+  // wx mouse coordinates are logical pixels, while OpenCPN's PlugIn_ViewPort
+  // may use backing pixels (notably on Retina macOS). Convert the client mouse
+  // position into the exact viewport pixel space used by GetCanvasPixLL().
+  const wxPoint client_mouse =
+      m_parent_window->ScreenToClient(wxGetMousePosition());
+  const wxSize client_size = m_parent_window->GetClientSize();
+  wxPoint mouse = client_mouse;
+  if (client_size.x > 0 && client_size.y > 0 &&
+      m_last_viewport->pix_width > 0 && m_last_viewport->pix_height > 0) {
+    mouse.x = static_cast<int>(std::lround(
+        static_cast<double>(client_mouse.x) * m_last_viewport->pix_width /
+        client_size.x));
+    mouse.y = static_cast<int>(std::lround(
+        static_cast<double>(client_mouse.y) * m_last_viewport->pix_height /
+        client_size.y));
+  }
 
   if (event.LeftDown()) {
     if (m_move_label_type == LabelMoveType::None)
