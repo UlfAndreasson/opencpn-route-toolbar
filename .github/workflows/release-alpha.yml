@@ -183,11 +183,11 @@ jobs:
           merge-multiple: true
       - name: List release assets
         run: ls -lah release-assets
-      - name: Publish v0.5.10-alpha1
+      - name: Publish v0.5.10-alpha2
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.5.10-alpha1
-          name: Route Toolbar 0.5.10 Alpha 1
+          tag_name: v0.5.10-alpha2
+          name: Route Toolbar 0.5.10 Alpha 2
           prerelease: true
           generate_release_notes: true
           files: |
