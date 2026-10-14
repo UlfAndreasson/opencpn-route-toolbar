@@ -124,7 +124,10 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   m_status = new wxStaticText(
       this, wxID_ANY,
       _("Route EBL/VRM, Route PIL, Route TURN and Route Report are ready."));
-  m_status->Wrap(360);
+  m_status->Wrap(390);
+  // Reserve enough space for multi-line status messages so the
+  // Route Toolbar window does not resize when the status changes.
+  m_status->SetMinSize(wxSize(-1, 52));
   top->Add(new wxStaticLine(this), 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
   top->Add(m_status, 0, wxEXPAND | wxALL, 10);
 
@@ -163,8 +166,6 @@ void RouteToolbarDialog::SetStatus(const wxString& text) {
   if (!m_status) return;
   m_status->SetLabel(text);
   m_status->Wrap(390);
-  GetSizer()->Fit(this);
-  SetMinSize(wxSize(420, GetSize().GetHeight()));
   Layout();
 }
 

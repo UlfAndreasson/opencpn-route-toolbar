@@ -74,11 +74,15 @@ public:
         (source == m_owner->m_dialog || m_owner->m_dialog->IsDescendant(source)))
       return wxEventFilter::Event_Skip;
 
-    if (mouse->RightDown()) {
+    if (mouse->RightDown() || mouse->LeftDown()) {
+      // Handle button presses immediately and consume them so OpenCPN
+      // does not pan/recenter the chart underneath Move labels.
       m_owner->OnMoveLabelsMouse(*mouse);
       return wxEventFilter::Event_Processed;
     }
 
+    // Mouse motion must still reach OpenCPN so SetCursorLatLon stays current.
+    // Update the moving label after OpenCPN has processed the motion.
     if (wxTheApp) {
       wxMouseEvent deferred(*mouse);
       route_toolbar_pi* owner = m_owner;
