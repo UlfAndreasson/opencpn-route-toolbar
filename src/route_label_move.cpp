@@ -8,6 +8,7 @@
 
 #include <wx/dcmemory.h>
 #include <wx/event.h>
+#include <wx/eventfilter.h>
 #include <wx/fileconf.h>
 
 namespace {
@@ -57,18 +58,18 @@ public:
   int FilterEvent(wxEvent& event) override {
     if (!m_owner || !m_owner->m_move_labels_active ||
         event.GetEventObject() != m_owner->m_parent_window)
-      return Event_Skip;
+      return wxEventFilter::Event_Skip;
 
     const wxEventType type = event.GetEventType();
     if (type != wxEVT_LEFT_DOWN && type != wxEVT_RIGHT_DOWN &&
         type != wxEVT_MOTION)
-      return Event_Skip;
+      return wxEventFilter::Event_Skip;
 
     auto* mouse = dynamic_cast<wxMouseEvent*>(&event);
-    if (!mouse) return Event_Skip;
+    if (!mouse) return wxEventFilter::Event_Skip;
 
     m_owner->OnMoveLabelsMouse(*mouse);
-    return Event_Processed;
+    return wxEventFilter::Event_Processed;
   }
 
 private:
