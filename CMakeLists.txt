@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(route_toolbar_pi VERSION 0.5.9 LANGUAGES CXX)
+project(route_toolbar_pi VERSION 0.5.10 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -53,7 +53,7 @@ if(APPLE)
   target_link_libraries(route_toolbar_pi PRIVATE ${OPENGL_FRAMEWORK})
   target_link_options(route_toolbar_pi PRIVATE "LINKER:-undefined,dynamic_lookup")
 
-  # Plugins must use the wxWidgets runtime shipped inside OpenCPN.app rather
+  # Plugins must use the wxWidgets runtime shipped inside OpenCPN.app Frameworks rather
   # than loading a second Homebrew wxWidgets copy into the same process.
   add_custom_command(TARGET route_toolbar_pi POST_BUILD
     COMMAND /bin/bash "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fix-macos-libs.sh" "$<TARGET_FILE:route_toolbar_pi>"
