@@ -6,11 +6,11 @@
 #include <algorithm>
 #include <cmath>
 
+#include <wx/app.h>
 #include <wx/dcmemory.h>
 #include <wx/event.h>
 #include <wx/eventfilter.h>
 #include <wx/fileconf.h>
-#include <wx/utils.h>
 
 namespace {
 
@@ -51,6 +51,11 @@ wxString TurnLabel(double turn_angle_deg, double radius_nm,
 
 }  // namespace
 
+// Important: this filter must NOT consume normal left-button/motion events.
+// OpenCPN itself needs to receive them first so SetCursorLatLon() is updated
+// in the same native chart-canvas pipeline used by EBL/PIL/TURN.  Earlier
+// versions returned Event_Processed here, so our hit-test was deliberately
+// preventing OpenCPN from updating the very cursor position we depended on.
 class RouteToolbarLabelMoveFilter final : public wxEventFilter {
 public:
   explicit RouteToolbarLabelMoveFilter(route_toolbar_pi* owner)
@@ -74,8 +79,26 @@ public:
         (source == m_owner->m_dialog || m_owner->m_dialog->IsDescendant(source)))
       return wxEventFilter::Event_Skip;
 
-    m_owner->OnMoveLabelsMouse(*mouse);
-    return wxEventFilter::Event_Processed;
+    // Right-click is only an exit command and does not need a fresh cursor.
+    // Consume it so OpenCPN does not also open the chart context menu.
+    if (mouse->RightDown()) {
+      m_owner->OnMoveLabelsMouse(*mouse);
+      return wxEventFilter::Event_Processed;
+    }
+
+    // Let OpenCPN process the event first.  Then run our action on the next
+    // event-loop turn, when SetCursorLatLon() reflects this exact mouse event.
+    // Copy the event: the original object is not valid after FilterEvent().
+    if (wxTheApp) {
+      wxMouseEvent deferred(*mouse);
+      route_toolbar_pi* owner = m_owner;
+      wxTheApp->CallAfter([owner, deferred]() mutable {
+        if (owner && owner->m_move_labels_active)
+          owner->OnMoveLabelsMouse(deferred);
+      });
+    }
+
+    return wxEventFilter::Event_Skip;
   }
 
 private:
@@ -131,7 +154,7 @@ void route_toolbar_pi::BeginMoveLabels() {
     wxEvtHandler::AddFilter(m_label_move_filter);
   }
 
-  SetStatus(_("Move labels: click any EBL/VRM, PIL or TURN/WO label, move it, then click again to place it. Continue with another label, or right-click to finish."));
+  SetStatus(_("Move labels: click any EBL/VRM, PIL or TURN/WO label, move the mouse, then click again to place it. Right-click finishes."));
 }
 
 void route_toolbar_pi::EndMoveLabels(bool cancel_current) {
@@ -218,7 +241,7 @@ bool route_toolbar_pi::TryBeginLabelMove(const wxPoint& mouse) {
     if (rect.Contains(mouse)) {
       start(LabelMoveType::Ebl, i, rect, item.label_manual,
             item.label_dx_px, item.label_dy_px);
-      SetStatus(_("Move label: EBL/VRM selected. Move the mouse, then click to place it. Right-click cancels and exits."));
+      SetStatus(_("Move label: EBL/VRM selected. Move the mouse, then click to place it."));
       return true;
     }
   }
@@ -230,7 +253,7 @@ bool route_toolbar_pi::TryBeginLabelMove(const wxPoint& mouse) {
     if (rect.Contains(mouse)) {
       start(LabelMoveType::Pil, i, rect, item.label_manual,
             item.label_dx_px, item.label_dy_px);
-      SetStatus(_("Move label: PIL selected. Move the mouse, then click to place it. Right-click cancels and exits."));
+      SetStatus(_("Move label: PIL selected. Move the mouse, then click to place it."));
       return true;
     }
   }
@@ -242,14 +265,41 @@ bool route_toolbar_pi::TryBeginLabelMove(const wxPoint& mouse) {
     if (rect.Contains(mouse)) {
       start(LabelMoveType::Turn, i, rect, item.label_manual,
             item.label_dx_px, item.label_dy_px);
-      SetStatus(_("Move label: TURN/WO selected. Move the mouse, then click to place it. Right-click cancels and exits."));
+      SetStatus(_("Move label: TURN/WO selected. Move the mouse, then click to place it."));
       return true;
     }
   }
 
+  // Include the nearest label rectangle in the diagnostic.  This makes any
+  // remaining coordinate mismatch immediately visible without guessing.
+  wxString nearest = _("none");
+  long best_d2 = std::numeric_limits<long>::max();
+  auto inspect = [&](const wxString& name, const wxRect& r) {
+    const int cx = std::clamp(mouse.x, r.GetLeft(), r.GetRight());
+    const int cy = std::clamp(mouse.y, r.GetTop(), r.GetBottom());
+    const long dx = static_cast<long>(mouse.x - cx);
+    const long dy = static_cast<long>(mouse.y - cy);
+    const long d2 = dx * dx + dy * dy;
+    if (d2 < best_d2) {
+      best_d2 = d2;
+      nearest = wxString::Format("%s [%d,%d %dx%d]", name,
+                                 r.x, r.y, r.width, r.height);
+    }
+  };
+
+  for (size_t i = 0; i < m_ebl_vrms.size(); ++i)
+    if (m_ebl_vrms[i].visible)
+      inspect("EBL", EblLabelRect(m_last_viewport, m_ebl_vrms[i]));
+  for (size_t i = 0; i < m_pils.size(); ++i)
+    if (m_pils[i].visible)
+      inspect("PIL", PilLabelRect(m_last_viewport, m_pils[i]));
+  for (size_t i = 0; i < m_turns.size(); ++i)
+    if (m_turns[i].visible)
+      inspect("WO", TurnLabelRect(m_last_viewport, m_turns[i]));
+
   SetStatus(wxString::Format(
-      _("Move labels: no label at canvas pixel %d,%d. Click directly inside a yellow Route Toolbar label."),
-      mouse.x, mouse.y));
+      _("Move labels: cursor %d,%d; nearest %s"),
+      mouse.x, mouse.y, nearest));
   return false;
 }
 
@@ -341,7 +391,7 @@ void route_toolbar_pi::CommitActiveLabelPosition() {
 }
 
 void route_toolbar_pi::OnMoveLabelsMouse(wxMouseEvent& event) {
-  if (!m_move_labels_active || !m_last_viewport || !m_parent_window) return;
+  if (!m_move_labels_active || !m_last_viewport) return;
 
   if (event.RightDown()) {
     EndMoveLabels(true);
@@ -349,22 +399,12 @@ void route_toolbar_pi::OnMoveLabelsMouse(wxMouseEvent& event) {
     return;
   }
 
-  // wx mouse coordinates are logical pixels, while OpenCPN's PlugIn_ViewPort
-  // may use backing pixels (notably on Retina macOS). Convert the client mouse
-  // position into the exact viewport pixel space used by GetCanvasPixLL().
-  const wxPoint client_mouse =
-      m_parent_window->ScreenToClient(wxGetMousePosition());
-  const wxSize client_size = m_parent_window->GetClientSize();
-  wxPoint mouse = client_mouse;
-  if (client_size.x > 0 && client_size.y > 0 &&
-      m_last_viewport->pix_width > 0 && m_last_viewport->pix_height > 0) {
-    mouse.x = static_cast<int>(std::lround(
-        static_cast<double>(client_mouse.x) * m_last_viewport->pix_width /
-        client_size.x));
-    mouse.y = static_cast<int>(std::lround(
-        static_cast<double>(client_mouse.y) * m_last_viewport->pix_height /
-        client_size.y));
-  }
+  // This is intentionally based on OpenCPN's chart cursor, not wx window or
+  // screen coordinates.  The deferred filter above guarantees OpenCPN has
+  // processed the corresponding native mouse event before we read it.
+  if (!m_has_cursor) return;
+  wxPoint mouse;
+  GetCanvasPixLL(m_last_viewport, &mouse, m_cursor_lat, m_cursor_lon);
 
   if (event.LeftDown()) {
     if (m_move_label_type == LabelMoveType::None)
