@@ -10,6 +10,7 @@
 #include <wx/event.h>
 #include <wx/eventfilter.h>
 #include <wx/fileconf.h>
+#include <wx/utils.h>
 
 namespace {
 
@@ -73,11 +74,6 @@ public:
         (source == m_owner->m_dialog || m_owner->m_dialog->IsDescendant(source)))
       return wxEventFilter::Event_Skip;
 
-    // We intentionally do not use wxMouseEvent pixel coordinates here.
-    // On macOS/OpenGL they can be relative to a different OpenCPN child
-    // window than GetCanvasPixLL().  OpenCPN's SetCursorLatLon callback gives
-    // us the authoritative chart cursor; OnMoveLabelsMouse converts that back
-    // to pixels in exactly the same viewport coordinate system as the labels.
     m_owner->OnMoveLabelsMouse(*mouse);
     return wxEventFilter::Event_Processed;
   }
@@ -251,7 +247,9 @@ bool route_toolbar_pi::TryBeginLabelMove(const wxPoint& mouse) {
     }
   }
 
-  SetStatus(_("Move labels: click directly inside a yellow/cyan Route Toolbar label."));
+  SetStatus(wxString::Format(
+      _("Move labels: no label at canvas pixel %d,%d. Click directly inside a yellow Route Toolbar label."),
+      mouse.x, mouse.y));
   return false;
 }
 
@@ -343,7 +341,7 @@ void route_toolbar_pi::CommitActiveLabelPosition() {
 }
 
 void route_toolbar_pi::OnMoveLabelsMouse(wxMouseEvent& event) {
-  if (!m_move_labels_active || !m_last_viewport || !m_has_cursor) return;
+  if (!m_move_labels_active || !m_last_viewport || !m_parent_window) return;
 
   if (event.RightDown()) {
     EndMoveLabels(true);
@@ -351,8 +349,10 @@ void route_toolbar_pi::OnMoveLabelsMouse(wxMouseEvent& event) {
     return;
   }
 
-  wxPoint mouse;
-  GetCanvasPixLL(m_last_viewport, &mouse, m_cursor_lat, m_cursor_lon);
+  // Use the actual global mouse position and convert it directly to the
+  // OpenCPN canvas. This avoids macOS/OpenGL child-window coordinate systems
+  // and avoids SetCursorLatLon timing/lag entirely.
+  const wxPoint mouse = m_parent_window->ScreenToClient(wxGetMousePosition());
 
   if (event.LeftDown()) {
     if (m_move_label_type == LabelMoveType::None)
