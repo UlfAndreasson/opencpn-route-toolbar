@@ -7,8 +7,6 @@
 #include <cmath>
 
 #include <wx/dcmemory.h>
-#include <wx/event.h>
-#include <wx/eventfilter.h>
 #include <wx/fileconf.h>
 
 namespace {
@@ -49,51 +47,6 @@ wxString TurnLabel(double turn_angle_deg, double radius_nm,
 }
 
 }  // namespace
-
-class RouteToolbarLabelMoveFilter final : public wxEventFilter {
-public:
-  explicit RouteToolbarLabelMoveFilter(route_toolbar_pi* owner)
-      : m_owner(owner) {}
-
-  int FilterEvent(wxEvent& event) override {
-    if (!m_owner || !m_owner->m_move_labels_active || !m_owner->m_parent_window)
-      return wxEventFilter::Event_Skip;
-
-    const wxEventType type = event.GetEventType();
-    if (type != wxEVT_LEFT_DOWN && type != wxEVT_RIGHT_DOWN &&
-        type != wxEVT_MOTION)
-      return wxEventFilter::Event_Skip;
-
-    auto* mouse = dynamic_cast<wxMouseEvent*>(&event);
-    auto* source = dynamic_cast<wxWindow*>(event.GetEventObject());
-    if (!mouse || !source) return wxEventFilter::Event_Skip;
-
-    // Don't swallow clicks in the Route Toolbar window itself.
-    if (m_owner->m_dialog &&
-        (source == m_owner->m_dialog || m_owner->m_dialog->IsDescendant(source)))
-      return wxEventFilter::Event_Skip;
-
-    // On macOS OpenCPN mouse events may originate from a sibling/GL child
-    // rather than GetOCPNCanvasWindow() itself. Convert the event position via
-    // screen coordinates into canvas coordinates and accept it if it lands on
-    // the chart canvas. This also makes the label hit-test use the same pixel
-    // coordinate system as GetCanvasPixLL().
-    const wxPoint screen_pos = source->ClientToScreen(mouse->GetPosition());
-    const wxPoint canvas_pos = m_owner->m_parent_window->ScreenToClient(screen_pos);
-    const wxSize canvas_size = m_owner->m_parent_window->GetClientSize();
-    if (canvas_pos.x < 0 || canvas_pos.y < 0 ||
-        canvas_pos.x >= canvas_size.x || canvas_pos.y >= canvas_size.y)
-      return wxEventFilter::Event_Skip;
-
-    wxMouseEvent translated(*mouse);
-    translated.SetPosition(canvas_pos);
-    m_owner->OnMoveLabelsMouse(translated);
-    return wxEventFilter::Event_Processed;
-  }
-
-private:
-  route_toolbar_pi* m_owner{nullptr};
-};
 
 void route_toolbar_pi::LoadUiPreferences() {
   if (m_ui_preferences_loaded) return;
@@ -139,11 +92,6 @@ void route_toolbar_pi::BeginMoveLabels() {
   m_move_label_type = LabelMoveType::None;
   m_move_label_index = -1;
 
-  if (!m_label_move_filter) {
-    m_label_move_filter = new RouteToolbarLabelMoveFilter(this);
-    wxEvtHandler::AddFilter(m_label_move_filter);
-  }
-
   SetStatus(_("Move labels: click any EBL/VRM, PIL or TURN/WO label, move it, then click again to place it. Continue with another label, or right-click to finish."));
 }
 
@@ -154,12 +102,6 @@ void route_toolbar_pi::EndMoveLabels(bool cancel_current) {
   m_move_label_type = LabelMoveType::None;
   m_move_label_index = -1;
   m_move_labels_active = false;
-
-  if (m_label_move_filter) {
-    wxEvtHandler::RemoveFilter(m_label_move_filter);
-    delete m_label_move_filter;
-    m_label_move_filter = nullptr;
-  }
 
   if (m_dialog) m_dialog->SetMoveLabelsActive(false);
   if (m_parent_window) RequestRefresh(m_parent_window);
@@ -352,7 +294,7 @@ void route_toolbar_pi::CommitActiveLabelPosition() {
 }
 
 void route_toolbar_pi::OnMoveLabelsMouse(wxMouseEvent& event) {
-  if (!m_move_labels_active) return;
+  if (!m_move_labels_active || !m_last_viewport || !m_has_cursor) return;
 
   if (event.RightDown()) {
     EndMoveLabels(true);
@@ -360,16 +302,13 @@ void route_toolbar_pi::OnMoveLabelsMouse(wxMouseEvent& event) {
     return;
   }
 
-  const wxPoint mouse = event.GetPosition();
+  wxPoint mouse;
+  GetCanvasPixLL(m_last_viewport, &mouse, m_cursor_lat, m_cursor_lon);
 
   if (event.LeftDown()) {
     if (m_move_label_type == LabelMoveType::None)
       TryBeginLabelMove(mouse);
     else
       CommitActiveLabelPosition();
-    return;
   }
-
-  if (event.Moving() && m_move_label_type != LabelMoveType::None)
-    UpdateActiveLabelPosition(mouse);
 }
