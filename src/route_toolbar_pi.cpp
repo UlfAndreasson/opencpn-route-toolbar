@@ -205,7 +205,13 @@ int ShowRouteToolbarActionButtons(wxWindow* parent,
   dialog.SetMinSize(wxSize(380, dialog.GetSize().GetHeight()));
   dialog.CentreOnParent();
   const int result = dialog.ShowModal();
-  return result > 0 ? result - 1 : -1;
+
+  // wxID_CANCEL is a positive wxWidgets ID. Treat Cancel explicitly
+  // as cancellation instead of converting it to a valid action index.
+  if (result == wxID_CANCEL || result <= 0)
+    return -1;
+
+  return result - 1;
 }
 
 
@@ -402,6 +408,12 @@ void route_toolbar_pi::SetCursorLatLon(double lat, double lon) {
 }
 
 bool route_toolbar_pi::MouseEventHook(wxMouseEvent& event) {
+
+  if (event.RightDown() && m_has_cursor) {
+    m_context_click_lat = m_cursor_lat;
+    m_context_click_lon = m_cursor_lon;
+    m_has_context_click = true;
+  }
 
   if (m_turn_mode != TurnMode::Idle) {
     if (event.RightDown()) {
@@ -785,8 +797,6 @@ void route_toolbar_pi::ShowEblTargetActions(int index) {
   wxArrayString actions;
   actions.Add(_("Move start point"));
   actions.Add(_("Move target"));
-  actions.Add(_("Move label"));
-  actions.Add(_("Reset label position"));
   actions.Add(_("Rename"));
   actions.Add(_("Delete EBL/VRM"));
 
@@ -810,10 +820,8 @@ void route_toolbar_pi::ShowEblTargetActions(int index) {
   switch (selected) {
     case 0: BeginMoveEblStart(index); break;
     case 1: BeginMoveEblTarget(index); break;
-    case 2: BeginMoveEblLabel(index); break;
-    case 3: ResetEblLabel(index); break;
-    case 4: RenameEblTarget(index); break;
-    case 5: DeleteEblTarget(index); break;
+    case 2: RenameEblTarget(index); break;
+    case 3: DeleteEblTarget(index); break;
     default: break;
   }
 }

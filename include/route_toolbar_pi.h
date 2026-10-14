@@ -387,5 +387,11 @@ private:
   double m_cursor_lat{0.0};
   double m_cursor_lon{0.0};
   bool m_has_cursor{false};
+
+  // Preserve where the chart context menu was opened. The cursor may move
+  // while the user selects an item from the popup/action dialog.
+  double m_context_click_lat{0.0};
+  double m_context_click_lon{0.0};
+  bool m_has_context_click{false};
   bool m_state_loaded{false};
 };
