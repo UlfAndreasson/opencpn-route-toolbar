@@ -35,9 +35,6 @@ RouteLegLabelGeometry BuildRouteLegLabelGeometry(const wxPoint& a,
   const double length = std::hypot(dx, dy);
   if (length < 0.5) return {};
 
-  // Text direction: use the same readable orientation as v0.5.4.  The
-  // baseline still follows the route leg, but is flipped when needed so the
-  // characters are not rendered upside down.
   double ux = dx / length;
   double uy = dy / length;
   if (ux < 0.0 || (std::abs(ux) < 1e-9 && uy > 0.0)) {
@@ -45,16 +42,18 @@ RouteLegLabelGeometry BuildRouteLegLabelGeometry(const wxPoint& a,
     uy = -uy;
   }
 
-  // Placement direction is deliberately independent of text direction.
-  // Shallow legs use the visual upper side; steep legs use the visual left
-  // side.  Therefore flipping the text for readability can never move the
-  // label to the opposite side of the route line.
   double nx = dy / length;
   double ny = -dx / length;
   if (std::abs(dx) >= std::abs(dy)) {
-    if (ny > 0.0) { nx = -nx; ny = -ny; }
+    if (ny > 0.0) {
+      nx = -nx;
+      ny = -ny;
+    }
   } else {
-    if (nx > 0.0) { nx = -nx; ny = -ny; }
+    if (nx > 0.0) {
+      nx = -nx;
+      ny = -ny;
+    }
   }
 
   constexpr double gap_px = 1.0;
@@ -62,9 +61,6 @@ RouteLegLabelGeometry BuildRouteLegLabelGeometry(const wxPoint& a,
   const double half_h = static_cast<double>(extent.y) / 2.0;
   const double mid_x = (static_cast<double>(a.x) + b.x) / 2.0;
   const double mid_y = (static_cast<double>(a.y) + b.y) / 2.0;
-
-  // Centre the label on the leg midpoint and offset it by just one pixel so
-  // the lower edge of the text essentially touches the route line.
   const double cx = mid_x + nx * (half_h + gap_px);
   const double cy = mid_y + ny * (half_h + gap_px);
 
@@ -77,9 +73,6 @@ RouteLegLabelGeometry BuildRouteLegLabelGeometry(const wxPoint& a,
                  static_cast<int>(std::lround(cy + uy * half_w - ny * half_h)));
   g.p3 = wxPoint(static_cast<int>(std::lround(cx - ux * half_w - nx * half_h)),
                  static_cast<int>(std::lround(cy - uy * half_w - ny * half_h)));
-
-  // wxDC uses positive angles counter-clockwise. Screen Y grows downward, so
-  // negate the screen-space line angle.
   g.wx_angle_deg = -std::atan2(uy, ux) * 180.0 / M_PI;
   return g;
 }
@@ -123,8 +116,8 @@ void DrawGlRotatedText(const wxString& label, const wxFont& font,
   const unsigned char* rgb = image.GetData();
   std::vector<unsigned char> rgba(static_cast<size_t>(width * height * 4), 0);
   for (int i = 0; i < width * height; ++i) {
-    const unsigned char alpha = std::max(rgb[i * 3],
-                                 std::max(rgb[i * 3 + 1], rgb[i * 3 + 2]));
+    const unsigned char alpha =
+        std::max(rgb[i * 3], std::max(rgb[i * 3 + 1], rgb[i * 3 + 2]));
     rgba[i * 4] = colour.Red();
     rgba[i * 4 + 1] = colour.Green();
     rgba[i * 4 + 2] = colour.Blue();
@@ -146,30 +139,33 @@ void DrawGlRotatedText(const wxString& label, const wxFont& font,
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
-               GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
+               GL_UNSIGNED_BYTE, rgba.data());
   glEnable(GL_TEXTURE_2D);
   glColor4ub(255, 255, 255, 255);
   glBegin(GL_QUADS);
-  glTexCoord2f(0.0f, 0.0f); glVertex2i(g.p0.x, g.p0.y);
-  glTexCoord2f(1.0f, 0.0f); glVertex2i(g.p1.x, g.p1.y);
-  glTexCoord2f(1.0f, 1.0f); glVertex2i(g.p2.x, g.p2.y);
-  glTexCoord2f(0.0f, 1.0f); glVertex2i(g.p3.x, g.p3.y);
+  glTexCoord2f(0.0f, 0.0f);
+  glVertex2i(g.p0.x, g.p0.y);
+  glTexCoord2f(1.0f, 0.0f);
+  glVertex2i(g.p1.x, g.p1.y);
+  glTexCoord2f(1.0f, 1.0f);
+  glVertex2i(g.p2.x, g.p2.y);
+  glTexCoord2f(0.0f, 1.0f);
+  glVertex2i(g.p3.x, g.p3.y);
   glEnd();
 
   glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous_texture));
   glPixelStorei(GL_UNPACK_ALIGNMENT, previous_unpack_alignment);
-  if (texture_was_enabled) glEnable(GL_TEXTURE_2D); else glDisable(GL_TEXTURE_2D);
+  if (texture_was_enabled)
+    glEnable(GL_TEXTURE_2D);
+  else
+    glDisable(GL_TEXTURE_2D);
   glDeleteTextures(1, &texture);
 }
 
 }  // namespace
 
 wxColour route_toolbar_pi::ResolveRouteColour(const wxString&) const {
-  // OpenCPN API 1.21 does not expose the route's optional GPXX display colour
-  // through PlugIn_Route / PlugIn_Route_Ex. Use OpenCPN's current route display
-  // colour so labels follow the normal/default route rendering and adapt to the
-  // active colour scheme.
   wxColour colour(0, 105, 255);
   wxColour global;
   if (GetGlobalColor("UINFB", &global) && global.IsOk()) colour = global;
@@ -177,7 +173,8 @@ wxColour route_toolbar_pi::ResolveRouteColour(const wxString&) const {
 }
 
 void route_toolbar_pi::DrawRouteLegLabels(wxDC& dc, PlugIn_ViewPort* vp) const {
-  if (!vp || !vp->bValid || !m_notes_visible) return;
+  m_last_viewport = vp;
+  if (!vp || !vp->bValid || !m_leg_info_visible) return;
 
   const wxFont old_font = dc.GetFont();
   const wxColour old_text = dc.GetTextForeground();
@@ -191,7 +188,8 @@ void route_toolbar_pi::DrawRouteLegLabels(wxDC& dc, PlugIn_ViewPort* vp) const {
     if (route_ex && !route_ex->m_isVisible) continue;
 
     std::vector<PlugIn_Waypoint*> points;
-    for (auto node = route->pWaypointList->GetFirst(); node; node = node->GetNext()) {
+    for (auto node = route->pWaypointList->GetFirst(); node;
+         node = node->GetNext()) {
       if (node->GetData()) points.push_back(node->GetData());
     }
     if (points.size() < 2) continue;
@@ -202,11 +200,12 @@ void route_toolbar_pi::DrawRouteLegLabels(wxDC& dc, PlugIn_ViewPort* vp) const {
     for (size_t i = 0; i + 1 < points.size(); ++i) {
       double course = 0.0;
       double distance = 0.0;
-      DistanceBearingMercator_Plugin(points[i + 1]->m_lat, points[i + 1]->m_lon,
-                                     points[i]->m_lat, points[i]->m_lon,
-                                     &course, &distance);
+      DistanceBearingMercator_Plugin(points[i + 1]->m_lat,
+                                     points[i + 1]->m_lon, points[i]->m_lat,
+                                     points[i]->m_lon, &course, &distance);
       course = NormalizeBearing(course);
-      const wxString text = wxString::Format("%03.0f°T  %.2f M", course, distance);
+      const wxString text =
+          wxString::Format("%03.0f°T  %.2f M", course, distance);
 
       wxPoint a, b;
       GetCanvasPixLL(vp, &a, points[i]->m_lat, points[i]->m_lon);
@@ -250,8 +249,8 @@ void route_toolbar_pi::DrawGlText(const wxString& label, int x, int y,
   const unsigned char* rgb = image.GetData();
   std::vector<unsigned char> rgba(static_cast<size_t>(width * height * 4), 0);
   for (int i = 0; i < width * height; ++i) {
-    const unsigned char alpha = std::max(rgb[i * 3],
-                                 std::max(rgb[i * 3 + 1], rgb[i * 3 + 2]));
+    const unsigned char alpha =
+        std::max(rgb[i * 3], std::max(rgb[i * 3 + 1], rgb[i * 3 + 2]));
     rgba[i * 4] = colour.Red();
     rgba[i * 4 + 1] = colour.Green();
     rgba[i * 4 + 2] = colour.Blue();
@@ -273,25 +272,33 @@ void route_toolbar_pi::DrawGlText(const wxString& label, int x, int y,
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
-               GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
+               GL_UNSIGNED_BYTE, rgba.data());
   glEnable(GL_TEXTURE_2D);
   glColor4ub(255, 255, 255, 255);
   glBegin(GL_QUADS);
-  glTexCoord2f(0.0f, 0.0f); glVertex2i(x, y);
-  glTexCoord2f(1.0f, 0.0f); glVertex2i(x + width, y);
-  glTexCoord2f(1.0f, 1.0f); glVertex2i(x + width, y + height);
-  glTexCoord2f(0.0f, 1.0f); glVertex2i(x, y + height);
+  glTexCoord2f(0.0f, 0.0f);
+  glVertex2i(x, y);
+  glTexCoord2f(1.0f, 0.0f);
+  glVertex2i(x + width, y);
+  glTexCoord2f(1.0f, 1.0f);
+  glVertex2i(x + width, y + height);
+  glTexCoord2f(0.0f, 1.0f);
+  glVertex2i(x, y + height);
   glEnd();
 
   glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous_texture));
   glPixelStorei(GL_UNPACK_ALIGNMENT, previous_unpack_alignment);
-  if (texture_was_enabled) glEnable(GL_TEXTURE_2D); else glDisable(GL_TEXTURE_2D);
+  if (texture_was_enabled)
+    glEnable(GL_TEXTURE_2D);
+  else
+    glDisable(GL_TEXTURE_2D);
   glDeleteTextures(1, &texture);
 }
 
 void route_toolbar_pi::DrawRouteLegLabelsGL(PlugIn_ViewPort* vp) const {
-  if (!vp || !vp->bValid || !m_notes_visible) return;
+  m_last_viewport = vp;
+  if (!vp || !vp->bValid || !m_leg_info_visible) return;
 
   const wxFont font = GetEblLabelFont();
   wxBitmap measure_bitmap(1, 1, 24);
@@ -306,7 +313,8 @@ void route_toolbar_pi::DrawRouteLegLabelsGL(PlugIn_ViewPort* vp) const {
     if (route_ex && !route_ex->m_isVisible) continue;
 
     std::vector<PlugIn_Waypoint*> points;
-    for (auto node = route->pWaypointList->GetFirst(); node; node = node->GetNext()) {
+    for (auto node = route->pWaypointList->GetFirst(); node;
+         node = node->GetNext()) {
       if (node->GetData()) points.push_back(node->GetData());
     }
     if (points.size() < 2) continue;
@@ -315,11 +323,12 @@ void route_toolbar_pi::DrawRouteLegLabelsGL(PlugIn_ViewPort* vp) const {
     for (size_t i = 0; i + 1 < points.size(); ++i) {
       double course = 0.0;
       double distance = 0.0;
-      DistanceBearingMercator_Plugin(points[i + 1]->m_lat, points[i + 1]->m_lon,
-                                     points[i]->m_lat, points[i]->m_lon,
-                                     &course, &distance);
+      DistanceBearingMercator_Plugin(points[i + 1]->m_lat,
+                                     points[i + 1]->m_lon, points[i]->m_lat,
+                                     points[i]->m_lon, &course, &distance);
       course = NormalizeBearing(course);
-      const wxString text = wxString::Format("%03.0f°T  %.2f M", course, distance);
+      const wxString text =
+          wxString::Format("%03.0f°T  %.2f M", course, distance);
       const wxSize extent = measure_dc.GetTextExtent(text);
 
       wxPoint a, b;
