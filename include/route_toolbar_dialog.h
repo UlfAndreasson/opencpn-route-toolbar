@@ -14,8 +14,10 @@ class route_toolbar_pi;
 class RouteToolbarDialog final : public wxDialog {
 public:
   RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugin);
+  ~RouteToolbarDialog() override;
   void SetStatus(const wxString& text);
   void SetToolButtons(bool ebl_active, bool pil_active, bool turn_active);
+  void SetMoveLabelsActive(bool active);
 
 private:
   void OnEblVrm(wxCommandEvent& event);
@@ -26,10 +28,12 @@ private:
   void OnGpx(wxCommandEvent& event);
   void OnLabelSize(wxSpinEvent& event);
   void OnLabelSizeText(wxCommandEvent& event);
+  void OnMoveLabels(wxCommandEvent& event);
   void OnEblColour(wxColourPickerEvent& event);
   void OnPilColour(wxColourPickerEvent& event);
   void OnTurnColour(wxColourPickerEvent& event);
-  void OnNotesVisibility(wxCommandEvent& event);
+  void OnLabelsVisibility(wxCommandEvent& event);
+  void OnLegInfoVisibility(wxCommandEvent& event);
   void OnClose(wxCloseEvent& event);
 
   route_toolbar_pi* m_plugin{nullptr};
@@ -37,9 +41,11 @@ private:
   wxToggleButton* m_pil_button{nullptr};
   wxToggleButton* m_turn_button{nullptr};
   wxSpinCtrl* m_label_size{nullptr};
+  wxToggleButton* m_move_labels_button{nullptr};
   wxColourPickerCtrl* m_ebl_colour{nullptr};
   wxColourPickerCtrl* m_pil_colour{nullptr};
   wxColourPickerCtrl* m_turn_colour{nullptr};
-  wxButton* m_notes_button{nullptr};
+  wxButton* m_labels_button{nullptr};
+  wxButton* m_leg_info_button{nullptr};
   wxStaticText* m_status{nullptr};
 };

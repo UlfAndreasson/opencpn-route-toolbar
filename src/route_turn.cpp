@@ -49,29 +49,26 @@ wxString RadiusText(double radius_nm) {
   return wxString::Format("%.2f", radius_nm);
 }
 
-void DrawLabel(wxDC& dc, const wxString& text, const wxPoint& pos) {
+void DrawLabel(wxDC& dc, const wxString& text, const wxPoint& box,
+               const wxFont& font) {
   const wxFont old_font = dc.GetFont();
   const wxPen old_pen = dc.GetPen();
   const wxBrush old_brush = dc.GetBrush();
   const wxColour old_text = dc.GetTextForeground();
 
-  wxFont font(10, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL,
-              wxFONTWEIGHT_NORMAL, false);
   dc.SetFont(font);
   const wxSize extent = dc.GetTextExtent(text);
-
   dc.SetPen(wxPen(wxColour(190, 145, 65), 1));
   dc.SetBrush(wxBrush(wxColour(255, 238, 180)));
-  dc.DrawRectangle(pos.x - 4, pos.y - 3, extent.x + 8, extent.y + 6);
+  dc.DrawRectangle(box.x, box.y, extent.x + 8, extent.y + 6);
   dc.SetTextForeground(*wxBLACK);
-  dc.DrawText(text, pos);
+  dc.DrawText(text, box.x + 4, box.y + 3);
 
   dc.SetFont(old_font);
   dc.SetPen(old_pen);
   dc.SetBrush(old_brush);
   dc.SetTextForeground(old_text);
 }
-
 
 int ShowTurnActionButtons(wxWindow* parent, const wxString& prompt) {
   wxDialog dialog(parent, wxID_ANY, _("Route TURN"), wxDefaultPosition,
@@ -93,7 +90,6 @@ int ShowTurnActionButtons(wxWindow* parent, const wxString& prompt) {
   dialog.SetSizerAndFit(top);
   return dialog.ShowModal();
 }
-
 
 }  // namespace
 
@@ -180,10 +176,9 @@ bool route_toolbar_pi::BuildTurnFromRoute(
   if (!std::isfinite(radius_nm) ||
       radius_nm < kMinTurnRadiusNm ||
       radius_nm > kMaxTurnRadiusNm) {
-    return fail(
-        wxString::Format(
-            _("Turn radius must be between %.3f and %.1f NM."),
-            kMinTurnRadiusNm, kMaxTurnRadiusNm));
+    return fail(wxString::Format(
+        _("Turn radius must be between %.3f and %.1f NM."),
+        kMinTurnRadiusNm, kMaxTurnRadiusNm));
   }
 
   auto route = GetRoute_Plugin(route_guid);
@@ -208,9 +203,8 @@ bool route_toolbar_pi::BuildTurnFromRoute(
     return fail(_("The selected waypoint is no longer present in the route."));
 
   if (index == 0 || index + 1 >= waypoints.size())
-    return fail(
-        _("TURN requires an interior waypoint with both an inbound and "
-          "an outbound route leg."));
+    return fail(_("TURN requires an interior waypoint with both an inbound and "
+                  "an outbound route leg."));
 
   PlugIn_Waypoint* prev = waypoints[index - 1];
   PlugIn_Waypoint* wp = waypoints[index];
@@ -224,53 +218,41 @@ bool route_toolbar_pi::BuildTurnFromRoute(
   double outbound_course = 0.0;
   double outbound_distance = 0.0;
 
-  DistanceBearingMercator_Plugin(
-      wp->m_lat, wp->m_lon,
-      prev->m_lat, prev->m_lon,
-      &inbound_course, &inbound_distance);
-
-  DistanceBearingMercator_Plugin(
-      next->m_lat, next->m_lon,
-      wp->m_lat, wp->m_lon,
-      &outbound_course, &outbound_distance);
+  DistanceBearingMercator_Plugin(wp->m_lat, wp->m_lon, prev->m_lat,
+                                 prev->m_lon, &inbound_course,
+                                 &inbound_distance);
+  DistanceBearingMercator_Plugin(next->m_lat, next->m_lon, wp->m_lat,
+                                 wp->m_lon, &outbound_course,
+                                 &outbound_distance);
 
   inbound_course = NormalizeBearing(inbound_course);
   outbound_course = NormalizeBearing(outbound_course);
 
-  const double delta =
-      SignedCourseChange(inbound_course, outbound_course);
+  const double delta = SignedCourseChange(inbound_course, outbound_course);
   const double abs_delta = std::fabs(delta);
 
   if (abs_delta < kMinTurnAngleDeg)
     return fail(_("The course change is too small to create a useful turn."));
-
   if (abs_delta >= kMaxTurnAngleDeg)
-    return fail(
-        _("The course change is too close to 180°. "
-          "A simple tangent-radius turn is not defined reliably here."));
+    return fail(_("The course change is too close to 180°. "
+                  "A simple tangent-radius turn is not defined reliably here."));
 
   const double half_angle_rad = abs_delta * kPi / 360.0;
   const double tan_half = std::tan(half_angle_rad);
-
   if (!std::isfinite(tan_half) || tan_half <= 1e-9)
     return fail(_("Invalid turn geometry."));
 
   const double tangent_nm = radius_nm * tan_half;
-  const double available_nm =
-      std::min(inbound_distance, outbound_distance);
-
-  if (!std::isfinite(tangent_nm) ||
-      tangent_nm >= inbound_distance ||
+  const double available_nm = std::min(inbound_distance, outbound_distance);
+  if (!std::isfinite(tangent_nm) || tangent_nm >= inbound_distance ||
       tangent_nm >= outbound_distance) {
-    const double max_radius =
-        std::max(0.0, available_nm / tan_half);
-    return fail(
-        wxString::Format(
-            _("Radius %.3f NM does not fit on the adjacent route legs.\n\n"
-              "Required distance from WP: %.3f NM\n"
-              "Available shortest leg: %.3f NM\n"
-              "Maximum theoretical radius here: %.3f NM"),
-            radius_nm, tangent_nm, available_nm, max_radius));
+    const double max_radius = std::max(0.0, available_nm / tan_half);
+    return fail(wxString::Format(
+        _("Radius %.3f NM does not fit on the adjacent route legs.\n\n"
+          "Required distance from WP: %.3f NM\n"
+          "Available shortest leg: %.3f NM\n"
+          "Maximum theoretical radius here: %.3f NM"),
+        radius_nm, tangent_nm, available_nm, max_radius));
   }
 
   RouteTurn built;
@@ -282,7 +264,6 @@ bool route_toolbar_pi::BuildTurnFromRoute(
   built.prev_name = prev->m_MarkName;
   built.next_guid = next->m_GUID;
   built.next_name = next->m_MarkName;
-
   built.waypoint_lat = wp->m_lat;
   built.waypoint_lon = wp->m_lon;
   built.inbound_course_true = inbound_course;
@@ -294,23 +275,16 @@ bool route_toolbar_pi::BuildTurnFromRoute(
   built.tangent_nm = tangent_nm;
 
   PositionBearingDistanceMercator_Plugin(
-      wp->m_lat, wp->m_lon,
-      NormalizeBearing(inbound_course + 180.0),
-      tangent_nm,
-      &built.start_lat, &built.start_lon);
-
+      wp->m_lat, wp->m_lon, NormalizeBearing(inbound_course + 180.0),
+      tangent_nm, &built.start_lat, &built.start_lon);
   PositionBearingDistanceMercator_Plugin(
-      wp->m_lat, wp->m_lon,
-      outbound_course,
-      tangent_nm,
+      wp->m_lat, wp->m_lon, outbound_course, tangent_nm,
       &built.end_lat, &built.end_lon);
 
   const double center_bearing =
       NormalizeBearing(inbound_course + (delta > 0.0 ? 90.0 : -90.0));
-
   PositionBearingDistanceMercator_Plugin(
-      built.start_lat, built.start_lon,
-      center_bearing, radius_nm,
+      built.start_lat, built.start_lon, center_bearing, radius_nm,
       &built.center_lat, &built.center_lon);
 
   item = built;
@@ -318,9 +292,8 @@ bool route_toolbar_pi::BuildTurnFromRoute(
   return true;
 }
 
-int route_toolbar_pi::FindTurnByWaypoint(
-    const wxString& route_guid,
-    const wxString& waypoint_guid) const {
+int route_toolbar_pi::FindTurnByWaypoint(const wxString& route_guid,
+                                         const wxString& waypoint_guid) const {
   for (size_t i = 0; i < m_turns.size(); ++i) {
     if (m_turns[i].route_guid == route_guid &&
         m_turns[i].waypoint_guid == waypoint_guid)
@@ -330,13 +303,10 @@ int route_toolbar_pi::FindTurnByWaypoint(
 }
 
 void route_toolbar_pi::CreateOrEditTurn(const RouteWaypointHit& hit) {
-  if (!hit.found || hit.route_guid.IsEmpty() ||
-      hit.waypoint_guid.IsEmpty())
+  if (!hit.found || hit.route_guid.IsEmpty() || hit.waypoint_guid.IsEmpty())
     return;
 
-  const int existing =
-      FindTurnByWaypoint(hit.route_guid, hit.waypoint_guid);
-
+  const int existing = FindTurnByWaypoint(hit.route_guid, hit.waypoint_guid);
   double existing_rudder_deg = 0.0;
 
   if (existing >= 0) {
@@ -349,7 +319,6 @@ void route_toolbar_pi::CreateOrEditTurn(const RouteWaypointHit& hit) {
     const int action = ShowTurnActionButtons(
         m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
         _("A TURN already exists at ") + wp_name + _("."));
-
     if (action <= 0) return;
 
     if (action == 3) {
@@ -363,7 +332,6 @@ void route_toolbar_pi::CreateOrEditTurn(const RouteWaypointHit& hit) {
           _("Enter planned rudder angle in degrees. This is a manual planning value, not calculated by Route Toolbar. Enter 0 to hide it."),
           _("Planned rudder — ") + wp_name,
           wxString::Format("%.0f", existing_rudder_deg));
-
       if (rudder_dialog.ShowModal() != wxID_OK) return;
 
       wxString rudder_text = rudder_dialog.GetValue();
@@ -371,13 +339,12 @@ void route_toolbar_pi::CreateOrEditTurn(const RouteWaypointHit& hit) {
       rudder_text.Replace(",", ".");
 
       double rudder_deg = 0.0;
-      if (!rudder_text.ToDouble(&rudder_deg) ||
-          !std::isfinite(rudder_deg) ||
+      if (!rudder_text.ToDouble(&rudder_deg) || !std::isfinite(rudder_deg) ||
           rudder_deg < 0.0 || rudder_deg > 45.0) {
-        wxMessageBox(
-            _("Enter a planned rudder angle between 0 and 45 degrees."),
-            _("Route TURN"), wxOK | wxICON_WARNING,
-            m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window);
+        wxMessageBox(_("Enter a planned rudder angle between 0 and 45 degrees."),
+                     _("Route TURN"), wxOK | wxICON_WARNING,
+                     m_dialog ? static_cast<wxWindow*>(m_dialog)
+                              : m_parent_window);
         return;
       }
 
@@ -385,17 +352,15 @@ void route_toolbar_pi::CreateOrEditTurn(const RouteWaypointHit& hit) {
       SavePersistentState();
       if (m_parent_window) RequestRefresh(m_parent_window);
       SetStatus(wxString::Format(
-          _("Planned rudder at %s: %.0f° %s."),
-          wp_name, rudder_deg,
+          _("Planned rudder at %s: %.0f° %s."), wp_name, rudder_deg,
           TurnSide(m_turns[static_cast<size_t>(existing)].turn_angle_deg)));
       return;
     }
   }
 
   const double default_radius =
-      existing >= 0
-          ? m_turns[static_cast<size_t>(existing)].radius_nm
-          : m_default_turn_radius_nm;
+      existing >= 0 ? m_turns[static_cast<size_t>(existing)].radius_nm
+                    : m_default_turn_radius_nm;
 
   wxString wp_name = hit.waypoint_name;
   if (wp_name.IsEmpty()) wp_name = _("Waypoint");
@@ -404,9 +369,7 @@ void route_toolbar_pi::CreateOrEditTurn(const RouteWaypointHit& hit) {
       m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
       _("Enter desired geometric turn radius in nautical miles.\n"
         "Examples: 0.05, 0.10, 0.20, 0.30"),
-      _("TURN radius — ") + wp_name,
-      RadiusText(default_radius));
-
+      _("TURN radius — ") + wp_name, RadiusText(default_radius));
   if (radius_dialog.ShowModal() != wxID_OK) return;
 
   wxString text = radius_dialog.GetValue();
@@ -414,50 +377,42 @@ void route_toolbar_pi::CreateOrEditTurn(const RouteWaypointHit& hit) {
   text.Replace(",", ".");
 
   double radius_nm = 0.0;
-  if (!text.ToDouble(&radius_nm) ||
-      !std::isfinite(radius_nm) ||
-      radius_nm < kMinTurnRadiusNm ||
-      radius_nm > kMaxTurnRadiusNm) {
-    wxMessageBox(
-        _("Invalid radius. Enter a value in NM, for example 0.10."),
-        _("Route TURN"), wxOK | wxICON_WARNING,
-        m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window);
+  if (!text.ToDouble(&radius_nm) || !std::isfinite(radius_nm) ||
+      radius_nm < kMinTurnRadiusNm || radius_nm > kMaxTurnRadiusNm) {
+    wxMessageBox(_("Invalid radius. Enter a value in NM, for example 0.10."),
+                 _("Route TURN"), wxOK | wxICON_WARNING,
+                 m_dialog ? static_cast<wxWindow*>(m_dialog)
+                          : m_parent_window);
     return;
   }
 
   double planned_rudder_deg = existing_rudder_deg;
-
   if (existing < 0) {
     wxTextEntryDialog rudder_dialog(
         m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
         _("Optional: enter planned rudder angle in degrees. This value is manual and is not calculated from the turn radius. Enter 0 to omit it."),
-        _("Planned rudder — ") + wp_name,
-        "0");
-
+        _("Planned rudder — ") + wp_name, "0");
     if (rudder_dialog.ShowModal() != wxID_OK) return;
 
     wxString rudder_text = rudder_dialog.GetValue();
     rudder_text.Trim(true).Trim(false);
     rudder_text.Replace(",", ".");
-
     if (!rudder_text.ToDouble(&planned_rudder_deg) ||
-        !std::isfinite(planned_rudder_deg) ||
-        planned_rudder_deg < 0.0 || planned_rudder_deg > 45.0) {
-      wxMessageBox(
-          _("Enter a planned rudder angle between 0 and 45 degrees."),
-          _("Route TURN"), wxOK | wxICON_WARNING,
-          m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window);
+        !std::isfinite(planned_rudder_deg) || planned_rudder_deg < 0.0 ||
+        planned_rudder_deg > 45.0) {
+      wxMessageBox(_("Enter a planned rudder angle between 0 and 45 degrees."),
+                   _("Route TURN"), wxOK | wxICON_WARNING,
+                   m_dialog ? static_cast<wxWindow*>(m_dialog)
+                            : m_parent_window);
       return;
     }
   }
 
   RouteTurn turn;
   wxString error;
-  if (!BuildTurnFromRoute(
-          hit.route_guid, hit.waypoint_guid,
-          radius_nm, turn, &error)) {
-    wxMessageBox(error, _("Route TURN"),
-                 wxOK | wxICON_WARNING,
+  if (!BuildTurnFromRoute(hit.route_guid, hit.waypoint_guid, radius_nm, turn,
+                          &error)) {
+    wxMessageBox(error, _("Route TURN"), wxOK | wxICON_WARNING,
                  m_dialog ? static_cast<wxWindow*>(m_dialog)
                           : m_parent_window);
     SetStatus(error);
@@ -465,39 +420,34 @@ void route_toolbar_pi::CreateOrEditTurn(const RouteWaypointHit& hit) {
   }
 
   turn.rudder_angle_deg = planned_rudder_deg;
-  if (existing >= 0)
-    turn.visible = m_turns[static_cast<size_t>(existing)].visible;
-
-  if (existing >= 0)
+  if (existing >= 0) {
+    const RouteTurn& old = m_turns[static_cast<size_t>(existing)];
+    turn.visible = old.visible;
+    turn.label_manual = old.label_manual;
+    turn.label_dx_px = old.label_dx_px;
+    turn.label_dy_px = old.label_dy_px;
     m_turns[static_cast<size_t>(existing)] = turn;
-  else
+  } else {
     m_turns.push_back(turn);
+  }
 
   m_default_turn_radius_nm = radius_nm;
   SavePersistentState();
 
-  SetStatus(
-      wxString::Format(
-          _("TURN %s saved: %03.0f°T → %03.0f°T, "
-            "Δ %.0f° %s, R %.2f NM. "
-            "WO %.3f NM before WP; turn end %.3f NM after WP. "
-            "Click another waypoint or right-click to finish."),
-          wp_name,
-          turn.inbound_course_true,
-          turn.outbound_course_true,
-          std::fabs(turn.turn_angle_deg),
-          TurnSide(turn.turn_angle_deg),
-          turn.radius_nm,
-          turn.tangent_nm,
-          turn.tangent_nm));
+  SetStatus(wxString::Format(
+      _("TURN %s saved: %03.0f°T → %03.0f°T, "
+        "Δ %.0f° %s, R %.2f NM. "
+        "WO %.3f NM before WP; turn end %.3f NM after WP. "
+        "Click another waypoint or right-click to finish."),
+      wp_name, turn.inbound_course_true, turn.outbound_course_true,
+      std::fabs(turn.turn_angle_deg), TurnSide(turn.turn_angle_deg),
+      turn.radius_nm, turn.tangent_nm, turn.tangent_nm));
 
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
 void route_toolbar_pi::DeleteTurn(int index) {
-  if (index < 0 ||
-      static_cast<size_t>(index) >= m_turns.size())
-    return;
+  if (index < 0 || static_cast<size_t>(index) >= m_turns.size()) return;
 
   const RouteTurn& turn = m_turns[static_cast<size_t>(index)];
   wxString wp_name = turn.waypoint_name;
@@ -505,66 +455,50 @@ void route_toolbar_pi::DeleteTurn(int index) {
 
   wxMessageDialog confirm(
       m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window,
-      _("Delete TURN at ") + wp_name + _("?"),
-      _("Route TURN"),
+      _("Delete TURN at ") + wp_name + _("?"), _("Route TURN"),
       wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
-
   if (confirm.ShowModal() != wxID_YES) return;
 
   m_turns.erase(m_turns.begin() + index);
   SavePersistentState();
   SetStatus(_("TURN deleted."));
-
   if (m_parent_window) RequestRefresh(m_parent_window);
 }
 
-void route_toolbar_pi::DrawTurn(
-    wxDC& dc, PlugIn_ViewPort* vp,
-    const RouteTurn& item) const {
+void route_toolbar_pi::DrawTurn(wxDC& dc, PlugIn_ViewPort* vp,
+                                const RouteTurn& item) const {
   if (!vp) return;
 
   double radial_start = 0.0;
   double radial_distance = 0.0;
-  DistanceBearingMercator_Plugin(
-      item.start_lat, item.start_lon,
-      item.center_lat, item.center_lon,
-      &radial_start, &radial_distance);
+  DistanceBearingMercator_Plugin(item.start_lat, item.start_lon,
+                                 item.center_lat, item.center_lon,
+                                 &radial_start, &radial_distance);
   radial_start = NormalizeBearing(radial_start);
 
   std::vector<wxPoint> points;
   points.reserve(kTurnArcSegments + 1);
-
   for (int i = 0; i <= kTurnArcSegments; ++i) {
-    const double t =
-        static_cast<double>(i) / kTurnArcSegments;
+    const double t = static_cast<double>(i) / kTurnArcSegments;
     const double bearing =
-        NormalizeBearing(
-            radial_start + item.turn_angle_deg * t);
-
+        NormalizeBearing(radial_start + item.turn_angle_deg * t);
     double lat = 0.0;
     double lon = 0.0;
-    PositionBearingDistanceMercator_Plugin(
-        item.center_lat, item.center_lon,
-        bearing, item.radius_nm, &lat, &lon);
-
+    PositionBearingDistanceMercator_Plugin(item.center_lat, item.center_lon,
+                                           bearing, item.radius_nm,
+                                           &lat, &lon);
     wxPoint px;
     GetCanvasPixLL(vp, &px, lat, lon);
     points.push_back(px);
   }
 
   wxPoint start_px;
-  wxPoint end_px;
-  wxPoint wp_px;
   GetCanvasPixLL(vp, &start_px, item.start_lat, item.start_lon);
-  GetCanvasPixLL(vp, &end_px, item.end_lat, item.end_lon);
-  GetCanvasPixLL(vp, &wp_px, item.waypoint_lat, item.waypoint_lon);
 
   const wxPen old_pen = dc.GetPen();
   const wxBrush old_brush = dc.GetBrush();
-
   dc.SetPen(wxPen(m_turn_colour, 3, wxPENSTYLE_SOLID));
   dc.SetBrush(*wxTRANSPARENT_BRUSH);
-
   for (size_t i = 1; i < points.size(); ++i)
     dc.DrawLine(points[i - 1], points[i]);
 
@@ -574,54 +508,47 @@ void route_toolbar_pi::DrawTurn(
   wxString turn_label =
       wxString::Format("WO · ΔK %.0f° %s · R %.2f NM",
                        std::fabs(item.turn_angle_deg),
-                       TurnSide(item.turn_angle_deg),
-                       item.radius_nm);
+                       TurnSide(item.turn_angle_deg), item.radius_nm);
   if (item.rudder_angle_deg > 0.0)
     turn_label += wxString::Format(" · Rudder %.0f° %s",
                                    item.rudder_angle_deg,
                                    TurnSide(item.turn_angle_deg));
 
   if (m_notes_visible) {
-    DrawLabel(dc, turn_label,
-              wxPoint(start_px.x + 10, start_px.y + 8));
+    const wxPoint box(start_px.x + (item.label_manual ? item.label_dx_px : 10),
+                      start_px.y + (item.label_manual ? item.label_dy_px : 8));
+    DrawLabel(dc, turn_label, box, GetEblLabelFont());
   }
 
   dc.SetPen(old_pen);
   dc.SetBrush(old_brush);
 }
 
-void route_toolbar_pi::DrawTurnGL(
-    PlugIn_ViewPort* vp,
-    const RouteTurn& item) const {
+void route_toolbar_pi::DrawTurnGL(PlugIn_ViewPort* vp,
+                                  const RouteTurn& item) const {
   if (!vp) return;
 
   double radial_start = 0.0;
   double radial_distance = 0.0;
-  DistanceBearingMercator_Plugin(
-      item.start_lat, item.start_lon,
-      item.center_lat, item.center_lon,
-      &radial_start, &radial_distance);
+  DistanceBearingMercator_Plugin(item.start_lat, item.start_lon,
+                                 item.center_lat, item.center_lon,
+                                 &radial_start, &radial_distance);
   radial_start = NormalizeBearing(radial_start);
 
   glDisable(GL_TEXTURE_2D);
-  glColor4ub(m_turn_colour.Red(),
-             m_turn_colour.Green(),
-             m_turn_colour.Blue(), 255);
+  glColor4ub(m_turn_colour.Red(), m_turn_colour.Green(), m_turn_colour.Blue(),
+             255);
   glLineWidth(3.0f);
-
   glBegin(GL_LINE_STRIP);
   for (int i = 0; i <= kTurnArcSegments; ++i) {
-    const double t =
-        static_cast<double>(i) / kTurnArcSegments;
+    const double t = static_cast<double>(i) / kTurnArcSegments;
     const double bearing =
         NormalizeBearing(radial_start + item.turn_angle_deg * t);
-
     double lat = 0.0;
     double lon = 0.0;
-    PositionBearingDistanceMercator_Plugin(
-        item.center_lat, item.center_lon,
-        bearing, item.radius_nm, &lat, &lon);
-
+    PositionBearingDistanceMercator_Plugin(item.center_lat, item.center_lon,
+                                           bearing, item.radius_nm,
+                                           &lat, &lon);
     wxPoint px;
     GetCanvasPixLL(vp, &px, lat, lon);
     glVertex2i(px.x, px.y);
@@ -629,49 +556,37 @@ void route_toolbar_pi::DrawTurnGL(
   glEnd();
 
   wxPoint start_px;
-  wxPoint end_px;
-  wxPoint wp_px;
   GetCanvasPixLL(vp, &start_px, item.start_lat, item.start_lon);
-  GetCanvasPixLL(vp, &end_px, item.end_lat, item.end_lon);
-  GetCanvasPixLL(vp, &wp_px, item.waypoint_lat, item.waypoint_lon);
-
-  auto ring = [](const wxPoint& p) {
-    glBegin(GL_LINE_LOOP);
-    for (int i = 0; i < 24; ++i) {
-      const double a =
-          2.0 * kPi * static_cast<double>(i) / 24.0;
-      glVertex2d(p.x + std::cos(a) * 5.0,
-                 p.y + std::sin(a) * 5.0);
-    }
-    glEnd();
-  };
-
-  ring(start_px);
+  glBegin(GL_LINE_LOOP);
+  for (int i = 0; i < 24; ++i) {
+    const double a = 2.0 * kPi * static_cast<double>(i) / 24.0;
+    glVertex2d(start_px.x + std::cos(a) * 5.0,
+               start_px.y + std::sin(a) * 5.0);
+  }
+  glEnd();
 
   wxString turn_label =
       wxString::Format("WO · ΔK %.0f° %s · R %.2f NM",
                        std::fabs(item.turn_angle_deg),
-                       TurnSide(item.turn_angle_deg),
-                       item.radius_nm);
+                       TurnSide(item.turn_angle_deg), item.radius_nm);
   if (item.rudder_angle_deg > 0.0)
     turn_label += wxString::Format(" · Rudder %.0f° %s",
                                    item.rudder_angle_deg,
                                    TurnSide(item.turn_angle_deg));
 
-  if (m_notes_visible)
-    DrawGlLabel(turn_label, start_px.x + 10, start_px.y + 8);
+  if (m_notes_visible) {
+    const int x = start_px.x + (item.label_manual ? item.label_dx_px : 10);
+    const int y = start_px.y + (item.label_manual ? item.label_dy_px : 8);
+    DrawGlLabel(turn_label, x, y);
+  }
 }
 
-void route_toolbar_pi::LoadTurnPersistentState(
-    wxFileConfig* config) {
+void route_toolbar_pi::LoadTurnPersistentState(wxFileConfig* config) {
   m_turns.clear();
   if (!config) return;
 
   config->SetPath("/PlugIns/RouteToolbar/TURN");
-
-  config->Read("DefaultRadiusNm",
-               &m_default_turn_radius_nm, 0.10);
-
+  config->Read("DefaultRadiusNm", &m_default_turn_radius_nm, 0.10);
   if (!std::isfinite(m_default_turn_radius_nm) ||
       m_default_turn_radius_nm < kMinTurnRadiusNm ||
       m_default_turn_radius_nm > kMaxTurnRadiusNm)
@@ -682,76 +597,63 @@ void route_toolbar_pi::LoadTurnPersistentState(
   count = std::clamp(count, 0L, 1000L);
 
   for (long i = 0; i < count; ++i) {
-    const wxString prefix =
-        wxString::Format("Item%03ld/", i);
-
+    const wxString prefix = wxString::Format("Item%03ld/", i);
     wxString route_guid;
     wxString waypoint_guid;
     double radius_nm = 0.10;
-
-    config->Read(prefix + "RouteGuid",
-                 &route_guid, wxEmptyString);
-    config->Read(prefix + "WaypointGuid",
-                 &waypoint_guid, wxEmptyString);
-    config->Read(prefix + "RadiusNm",
-                 &radius_nm, 0.10);
+    config->Read(prefix + "RouteGuid", &route_guid, wxEmptyString);
+    config->Read(prefix + "WaypointGuid", &waypoint_guid, wxEmptyString);
+    config->Read(prefix + "RadiusNm", &radius_nm, 0.10);
 
     bool visible = true;
     double rudder_angle_deg = 0.0;
+    bool label_manual = false;
+    long label_dx = 10;
+    long label_dy = 8;
     config->Read(prefix + "Visible", &visible, true);
-    config->Read(prefix + "RudderAngleDeg",
-                 &rudder_angle_deg, 0.0);
+    config->Read(prefix + "RudderAngleDeg", &rudder_angle_deg, 0.0);
+    config->Read(prefix + "LabelManual", &label_manual, false);
+    config->Read(prefix + "LabelDxPx", &label_dx, 10L);
+    config->Read(prefix + "LabelDyPx", &label_dy, 8L);
 
-    if (route_guid.IsEmpty() ||
-        waypoint_guid.IsEmpty())
-      continue;
+    if (route_guid.IsEmpty() || waypoint_guid.IsEmpty()) continue;
 
     RouteTurn rebuilt;
     wxString error;
-    if (BuildTurnFromRoute(route_guid, waypoint_guid,
-                           radius_nm, rebuilt, &error)) {
+    if (BuildTurnFromRoute(route_guid, waypoint_guid, radius_nm, rebuilt,
+                           &error)) {
       rebuilt.visible = visible;
-      rebuilt.rudder_angle_deg =
-          std::clamp(rudder_angle_deg, 0.0, 45.0);
+      rebuilt.rudder_angle_deg = std::clamp(rudder_angle_deg, 0.0, 45.0);
+      rebuilt.label_manual = label_manual;
+      rebuilt.label_dx_px = static_cast<int>(label_dx);
+      rebuilt.label_dy_px = static_cast<int>(label_dy);
       m_turns.push_back(rebuilt);
     }
   }
 }
 
-void route_toolbar_pi::SaveTurnPersistentState(
-    wxFileConfig* config) const {
+void route_toolbar_pi::SaveTurnPersistentState(wxFileConfig* config) const {
   if (!config) return;
 
   config->SetPath("/PlugIns/RouteToolbar");
   config->DeleteGroup("TURN");
   config->SetPath("TURN");
-
-  config->Write("DefaultRadiusNm",
-                m_default_turn_radius_nm);
-  config->Write("Count",
-                static_cast<long>(m_turns.size()));
+  config->Write("DefaultRadiusNm", m_default_turn_radius_nm);
+  config->Write("Count", static_cast<long>(m_turns.size()));
 
   for (size_t i = 0; i < m_turns.size(); ++i) {
     const wxString prefix =
-        wxString::Format(
-            "Item%03lu/",
-            static_cast<unsigned long>(i));
-
+        wxString::Format("Item%03lu/", static_cast<unsigned long>(i));
     const RouteTurn& item = m_turns[i];
-
-    config->Write(prefix + "RouteGuid",
-                  item.route_guid);
-    config->Write(prefix + "RouteName",
-                  item.route_name);
-    config->Write(prefix + "WaypointGuid",
-                  item.waypoint_guid);
-    config->Write(prefix + "WaypointName",
-                  item.waypoint_name);
-    config->Write(prefix + "RadiusNm",
-                  item.radius_nm);
-    config->Write(prefix + "Visible",
-                  item.visible);
-    config->Write(prefix + "RudderAngleDeg",
-                  item.rudder_angle_deg);
+    config->Write(prefix + "RouteGuid", item.route_guid);
+    config->Write(prefix + "RouteName", item.route_name);
+    config->Write(prefix + "WaypointGuid", item.waypoint_guid);
+    config->Write(prefix + "WaypointName", item.waypoint_name);
+    config->Write(prefix + "RadiusNm", item.radius_nm);
+    config->Write(prefix + "Visible", item.visible);
+    config->Write(prefix + "RudderAngleDeg", item.rudder_angle_deg);
+    config->Write(prefix + "LabelManual", item.label_manual);
+    config->Write(prefix + "LabelDxPx", static_cast<long>(item.label_dx_px));
+    config->Write(prefix + "LabelDyPx", static_cast<long>(item.label_dy_px));
   }
 }

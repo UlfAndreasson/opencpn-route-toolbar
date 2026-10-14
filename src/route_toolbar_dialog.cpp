@@ -22,10 +22,12 @@ enum : int {
   ID_ROUTE_REPORT,
   ID_ROUTE_GPX,
   ID_LABEL_SIZE,
+  ID_MOVE_LABELS,
   ID_EBL_COLOUR,
   ID_PIL_COLOUR,
   ID_TURN_COLOUR,
-  ID_NOTES_VISIBILITY
+  ID_LABELS_VISIBILITY,
+  ID_LEG_INFO_VISIBILITY
 };
 }
 
@@ -34,7 +36,10 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
                wxDefaultSize,
                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER | wxSTAY_ON_TOP),
       m_plugin(plugin) {
-  if (m_plugin) m_plugin->EnsureContextMenu();
+  if (m_plugin) {
+    m_plugin->EnsureContextMenu();
+    m_plugin->LoadUiPreferences();
+  }
 
   auto* top = new wxBoxSizer(wxVERTICAL);
 
@@ -60,7 +65,7 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   top->Add(gpx, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
   auto* label_row = new wxBoxSizer(wxHORIZONTAL);
-  label_row->Add(new wxStaticText(this, wxID_ANY, _("EBL label size:")),
+  label_row->Add(new wxStaticText(this, wxID_ANY, _("Label size:")),
                  0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
   m_label_size = new wxSpinCtrl(this, ID_LABEL_SIZE, wxEmptyString,
                                 wxDefaultPosition, wxSize(75, -1),
@@ -69,7 +74,11 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   label_row->Add(m_label_size, 0, wxALIGN_CENTER_VERTICAL);
   label_row->Add(new wxStaticText(this, wxID_ANY, _("pt")),
                  0, wxALIGN_CENTER_VERTICAL | wxLEFT, 5);
-  top->Add(label_row, 0, wxLEFT | wxRIGHT | wxBOTTOM, 10);
+  label_row->AddStretchSpacer(1);
+  m_move_labels_button =
+      new wxToggleButton(this, ID_MOVE_LABELS, _("Move labels"));
+  label_row->Add(m_move_labels_button, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, 12);
+  top->Add(label_row, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
   auto* colour_row = new wxBoxSizer(wxHORIZONTAL);
   colour_row->Add(new wxStaticText(this, wxID_ANY, _("EBL/VRM:")),
@@ -97,12 +106,20 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   colour_row->Add(m_turn_colour, 0, wxALIGN_CENTER_VERTICAL);
   top->Add(colour_row, 0, wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
-  m_notes_button = new wxButton(
-      this, ID_NOTES_VISIBILITY,
-      m_plugin && !m_plugin->GetNotesVisible()
-          ? _("View notes and leg info")
-          : _("Hide notes and leg info"));
-  top->Add(m_notes_button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+  auto* visibility_row = new wxBoxSizer(wxHORIZONTAL);
+  m_labels_button = new wxButton(
+      this, ID_LABELS_VISIBILITY,
+      m_plugin && !m_plugin->GetLabelsVisible()
+          ? _("Show labels")
+          : _("Hide labels"));
+  m_leg_info_button = new wxButton(
+      this, ID_LEG_INFO_VISIBILITY,
+      m_plugin && !m_plugin->GetLegInfoVisible()
+          ? _("Show leg info")
+          : _("Hide leg info"));
+  visibility_row->Add(m_labels_button, 1, wxRIGHT, 6);
+  visibility_row->Add(m_leg_info_button, 1, wxLEFT, 6);
+  top->Add(visibility_row, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
   m_status = new wxStaticText(
       this, wxID_ANY,
@@ -112,7 +129,7 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   top->Add(m_status, 0, wxEXPAND | wxALL, 10);
 
   SetSizerAndFit(top);
-  SetMinSize(wxSize(390, GetSize().GetHeight()));
+  SetMinSize(wxSize(420, GetSize().GetHeight()));
 
   Bind(wxEVT_TOGGLEBUTTON, &RouteToolbarDialog::OnEblVrm, this,
        ID_ROUTE_EBL_VRM);
@@ -123,23 +140,31 @@ RouteToolbarDialog::RouteToolbarDialog(wxWindow* parent, route_toolbar_pi* plugi
   Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnGpx, this, ID_ROUTE_GPX);
   Bind(wxEVT_SPINCTRL, &RouteToolbarDialog::OnLabelSize, this, ID_LABEL_SIZE);
   Bind(wxEVT_TEXT, &RouteToolbarDialog::OnLabelSizeText, this, ID_LABEL_SIZE);
+  Bind(wxEVT_TOGGLEBUTTON, &RouteToolbarDialog::OnMoveLabels, this,
+       ID_MOVE_LABELS);
   Bind(wxEVT_COLOURPICKER_CHANGED, &RouteToolbarDialog::OnEblColour, this,
        ID_EBL_COLOUR);
   Bind(wxEVT_COLOURPICKER_CHANGED, &RouteToolbarDialog::OnPilColour, this,
        ID_PIL_COLOUR);
   Bind(wxEVT_COLOURPICKER_CHANGED, &RouteToolbarDialog::OnTurnColour, this,
        ID_TURN_COLOUR);
-  Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnNotesVisibility, this,
-       ID_NOTES_VISIBILITY);
+  Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnLabelsVisibility, this,
+       ID_LABELS_VISIBILITY);
+  Bind(wxEVT_BUTTON, &RouteToolbarDialog::OnLegInfoVisibility, this,
+       ID_LEG_INFO_VISIBILITY);
   Bind(wxEVT_CLOSE_WINDOW, &RouteToolbarDialog::OnClose, this);
+}
+
+RouteToolbarDialog::~RouteToolbarDialog() {
+  if (m_plugin) m_plugin->EndMoveLabels(true);
 }
 
 void RouteToolbarDialog::SetStatus(const wxString& text) {
   if (!m_status) return;
   m_status->SetLabel(text);
-  m_status->Wrap(360);
+  m_status->Wrap(390);
   GetSizer()->Fit(this);
-  SetMinSize(wxSize(390, GetSize().GetHeight()));
+  SetMinSize(wxSize(420, GetSize().GetHeight()));
   Layout();
 }
 
@@ -150,8 +175,14 @@ void RouteToolbarDialog::SetToolButtons(bool ebl_active, bool pil_active,
   if (m_turn_button) m_turn_button->SetValue(turn_active);
 }
 
+void RouteToolbarDialog::SetMoveLabelsActive(bool active) {
+  if (m_move_labels_button) m_move_labels_button->SetValue(active);
+}
+
 void RouteToolbarDialog::OnEblVrm(wxCommandEvent& event) {
   if (!m_plugin) return;
+  m_plugin->EndMoveLabels(true);
+  SetMoveLabelsActive(false);
   if (event.IsChecked()) {
     SetToolButtons(true, false, false);
     m_plugin->BeginEblVrm();
@@ -163,6 +194,8 @@ void RouteToolbarDialog::OnEblVrm(wxCommandEvent& event) {
 
 void RouteToolbarDialog::OnPil(wxCommandEvent& event) {
   if (!m_plugin) return;
+  m_plugin->EndMoveLabels(true);
+  SetMoveLabelsActive(false);
   if (event.IsChecked()) {
     SetToolButtons(false, true, false);
     m_plugin->BeginPil();
@@ -174,6 +207,8 @@ void RouteToolbarDialog::OnPil(wxCommandEvent& event) {
 
 void RouteToolbarDialog::OnTurn(wxCommandEvent& event) {
   if (!m_plugin) return;
+  m_plugin->EndMoveLabels(true);
+  SetMoveLabelsActive(false);
   if (event.IsChecked()) {
     SetToolButtons(false, false, true);
     m_plugin->BeginTurn();
@@ -185,6 +220,8 @@ void RouteToolbarDialog::OnTurn(wxCommandEvent& event) {
 
 void RouteToolbarDialog::OnObjects(wxCommandEvent&) {
   if (!m_plugin) return;
+  m_plugin->EndMoveLabels(true);
+  SetMoveLabelsActive(false);
   SetToolButtons(false, false, false);
   m_plugin->CancelInteractiveTool();
   m_plugin->ShowObjectManager();
@@ -192,6 +229,8 @@ void RouteToolbarDialog::OnObjects(wxCommandEvent&) {
 
 void RouteToolbarDialog::OnReport(wxCommandEvent&) {
   if (!m_plugin) return;
+  m_plugin->EndMoveLabels(true);
+  SetMoveLabelsActive(false);
   SetToolButtons(false, false, false);
   m_plugin->CancelInteractiveTool();
   m_plugin->ExportRouteReport();
@@ -199,6 +238,8 @@ void RouteToolbarDialog::OnReport(wxCommandEvent&) {
 
 void RouteToolbarDialog::OnGpx(wxCommandEvent&) {
   if (!m_plugin) return;
+  m_plugin->EndMoveLabels(true);
+  SetMoveLabelsActive(false);
   SetToolButtons(false, false, false);
   m_plugin->CancelInteractiveTool();
   m_plugin->RouteGpx();
@@ -213,6 +254,17 @@ void RouteToolbarDialog::OnLabelSizeText(wxCommandEvent&) {
     m_plugin->SetLabelFontSize(m_label_size->GetValue());
 }
 
+void RouteToolbarDialog::OnMoveLabels(wxCommandEvent& event) {
+  if (!m_plugin) return;
+  if (event.IsChecked()) {
+    SetToolButtons(false, false, false);
+    m_plugin->CancelInteractiveTool();
+    m_plugin->BeginMoveLabels();
+  } else {
+    m_plugin->EndMoveLabels(true);
+  }
+}
+
 void RouteToolbarDialog::OnEblColour(wxColourPickerEvent& event) {
   if (m_plugin) m_plugin->SetEblColour(event.GetColour());
 }
@@ -225,17 +277,28 @@ void RouteToolbarDialog::OnTurnColour(wxColourPickerEvent& event) {
   if (m_plugin) m_plugin->SetTurnColour(event.GetColour());
 }
 
-void RouteToolbarDialog::OnNotesVisibility(wxCommandEvent&) {
-  if (!m_plugin || !m_notes_button) return;
-  const bool visible = !m_plugin->GetNotesVisible();
-  m_plugin->SetNotesVisible(visible);
-  m_notes_button->SetLabel(visible ? _("Hide notes and leg info")
-                                   : _("View notes and leg info"));
+void RouteToolbarDialog::OnLabelsVisibility(wxCommandEvent&) {
+  if (!m_plugin || !m_labels_button) return;
+  const bool visible = !m_plugin->GetLabelsVisible();
+  m_plugin->SetLabelsVisible(visible);
+  m_labels_button->SetLabel(visible ? _("Hide labels") : _("Show labels"));
+  Layout();
+}
+
+void RouteToolbarDialog::OnLegInfoVisibility(wxCommandEvent&) {
+  if (!m_plugin || !m_leg_info_button) return;
+  const bool visible = !m_plugin->GetLegInfoVisible();
+  m_plugin->SetLegInfoVisible(visible);
+  m_leg_info_button->SetLabel(visible ? _("Hide leg info")
+                                      : _("Show leg info"));
   Layout();
 }
 
 void RouteToolbarDialog::OnClose(wxCloseEvent&) {
-  if (m_plugin) m_plugin->CancelInteractiveTool();
+  if (m_plugin) {
+    m_plugin->EndMoveLabels(true);
+    m_plugin->CancelInteractiveTool();
+  }
   Hide();
   if (m_plugin) m_plugin->OnDialogHidden();
 }
