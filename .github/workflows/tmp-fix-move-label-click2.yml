@@ -1,0 +1,26 @@
+name: Temporary Move label click fix 2
+on:
+  push:
+    branches: ["fix/move-label-no-chart-jump"]
+    paths: [".github/workflows/tmp-fix-move-label-click2.yml"]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/move-label-no-chart-jump
+      - name: Patch source
+        shell: bash
+        run: |
+          python3 -c 'from pathlib import Path; p=Path("src/route_label_move.cpp"); s=p.read_text(); old="""    if (mouse->RightDown()) {\n      m_owner->OnMoveLabelsMouse(*mouse);\n      return wxEventFilter::Event_Processed;\n    }\n\n    if (wxTheApp) {\n      wxMouseEvent deferred(*mouse);\n      route_toolbar_pi* owner = m_owner;\n      wxTheApp->CallAfter([owner, deferred]() mutable {\n        if (owner && owner->m_move_labels_active)\n          owner->OnMoveLabelsMouse(deferred);\n      });\n    }\n\n    return wxEventFilter::Event_Skip;\n"""; new="""    if (mouse->RightDown() || mouse->LeftDown()) {\n      // Mouse motion has already kept SetCursorLatLon() current. Handle button\n      // presses immediately and consume them so OpenCPN does not pan/recenter\n      // the chart underneath a label move operation.\n      m_owner->OnMoveLabelsMouse(*mouse);\n      return wxEventFilter::Event_Processed;\n    }\n\n    // Motion must still reach OpenCPN so WANTS_CURSOR_LATLON keeps the cursor\n    // lat/lon current. Process our label-follow update after OpenCPN handles it.\n    if (wxTheApp) {\n      wxMouseEvent deferred(*mouse);\n      route_toolbar_pi* owner = m_owner;\n      wxTheApp->CallAfter([owner, deferred]() mutable {\n        if (owner && owner->m_move_labels_active)\n          owner->OnMoveLabelsMouse(deferred);\n      });\n    }\n\n    return wxEventFilter::Event_Skip;\n"""; assert old in s, "target block not found"; p.write_text(s.replace(old,new,1))'
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/route_label_move.cpp
+          git commit -m 'Fix Move labels chart jump on click'
+          git push origin HEAD:fix/move-label-no-chart-jump
