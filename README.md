@@ -31,16 +31,18 @@ The goal is not to replace general-purpose drawing plugins. It is to make **coas
 
 ## Current version
 
-**Route Toolbar 0.5.9**
+**Route Toolbar 0.5.11**
 
 Current development target:
 
 - OpenCPN 5.14.2
 - OpenCPN plugin API 1.21
 - wxWidgets 3.2
-- macOS Apple Silicon
+- macOS Apple Silicon + universal package path
+- Windows x86_64
+- Ubuntu 24.04 x86_64 GTK3
 
-> **Current status:** development preview. The macOS Apple Silicon package has been successfully imported through OpenCPN Plugin Manager. Catalog distribution, universal macOS packaging and wider platform builds are the next release steps.
+> **Current status:** Alpha/development preview. 0.5.11 focuses on a complete route-aware passage-plan report with waypoint, leg, TURN, PIL and EBL/VRM information.
 
 ## Typical workflow
 
@@ -62,7 +64,7 @@ Each OpenCPN route leg is annotated with true course and distance using the comp
 128°T  0.84 M
 ```
 
-The label follows the route-leg angle and is placed immediately above shallow legs or immediately to the visual left of steep legs. Leg info is shown only while the source OpenCPN route itself is visible, and it also follows the global **Hide/View notes and leg info** control.
+The label follows the route-leg angle and is placed immediately above shallow legs or immediately to the visual left of steep legs. Leg info is shown only while the source OpenCPN route itself is visible, and it also follows the global **Hide/View labels and leg info** control.
 
 OpenCPN API 1.21 does not expose every per-route custom display colour to plugins, so Route Toolbar uses the normal OpenCPN route display colour available through the plugin API.
 
@@ -70,20 +72,18 @@ OpenCPN API 1.21 does not expose every per-route custom display colour to plugin
 
 An EBL/VRM can start at an exact free chart position, or be Shift-snapped to a nearby route waypoint, OpenCPN Mark or Route TURN start/end point. The target is a visual/radar sight target such as a lighthouse, buoy, beacon, cardinal mark or other conspicuous object.
 
-Route Toolbar displays the EBL line, target ring/crosshair, true bearing, range, compact VRM arc and an optional yellow information note.
+Route Toolbar displays the EBL line, target ring/crosshair, true bearing, range, compact VRM arc and an optional yellow information label.
 
 ### EBL/VRM editing
 
-An existing EBL/VRM can be selected from its start point, target/end point or the EBL line itself. Available actions include:
+An existing EBL/VRM can be selected from its start point, target/end point, EBL line or visible yellow label. Available context actions include:
 
 - Move start point
 - Move target
-- Move label
-- Reset label position
 - Rename
-- Delete
+- Delete EBL/VRM
 
-Moving a start point graphically makes it a free chart position and removes its previous waypoint/Mark/TURN snap association.
+Yellow EBL/VRM, PIL and TURN labels are repositioned through **Route Toolbar → Move labels**. Moving a start point graphically makes it a free chart position and removes its previous waypoint/Mark/TURN snap association.
 
 ![Editing a Route EBL/VRM](screenshots/Screenshot%202026-10-12%20at%2016.04.14.png)
 
@@ -108,9 +108,9 @@ Multiple PILs can exist on one route leg. PIL objects are persistent, graphicall
 
 ## Route TURN
 
-Route TURN creates tangent turn geometry at an interior route waypoint. The user supplies a geometric turn radius; Route Toolbar calculates the course change, wheel-over/turn-start position, tangent arc and turn-end position. A planned rudder angle can be stored as a manual planning value.
+Route TURN creates tangent turn geometry at an interior route waypoint. The user supplies a geometric turn radius; Route Toolbar calculates the inbound/outbound course, course change and side, tangent/wheel-over distance, turn-start position, tangent arc and turn-end position. A planned rudder angle can be stored as a manual planning value.
 
-TURN objects are persistent and can be used as EBL/VRM snap points. TURN data is included in Route Toolbar GPX package data.
+TURN objects are persistent and can be used as EBL/VRM snap points. TURN data is included in Route Toolbar GPX package data and in Route Report.
 
 ## Route Objects
 
@@ -120,9 +120,9 @@ TURN objects are persistent and can be used as EBL/VRM snap points. TURN data is
 
 *Route Objects provides one place to inspect, show, hide and manage the planning objects associated with the route.*
 
-## Notes and leg info
+## Labels and leg info
 
-The toolbar provides **Hide notes and leg info / View notes and leg info**. Hiding them leaves EBL/VRM, PIL and TURN geometry visible, making it easier to inspect the route without information boxes or leg labels obscuring the chart. The setting is persistent.
+The toolbar provides **Hide labels / View labels** and **Hide leg info / View leg info** controls. Hiding labels leaves EBL/VRM, PIL and TURN geometry visible, making it easier to inspect the route without information boxes obscuring the chart. Settings are persistent.
 
 ## Colours
 
@@ -134,18 +134,26 @@ Route Toolbar provides persistent colour settings for:
 
 ## Route Report
 
-Route Report exports the OpenCPN route together with Route Toolbar planning data.
+Route Report exports the selected OpenCPN route together with Route Toolbar planning data.
 
 Formats:
 
 - **PDF — A4 landscape**
 - **CSV — Numbers / Excel / spreadsheet**
 
-The report includes route/waypoint information, course and distance, PIL offsets and EBL/VRM sight information.
+The 0.5.11 report includes:
+
+- waypoint number, name and coordinates
+- true course and distance for each leg
+- TURN information: inbound/outbound course, course change/side, radius, wheel-over/tangent distance and optional planned rudder
+- all PIL offsets on each route leg
+- all EBL/VRM sight marks associated with the route, including bearing, range and target coordinates
+
+EBL/VRM association is geometry-aware. Explicit TURN/WP associations are used first. Free-point EBL/VRM starts on or near TURN tangent/arc geometry are attached to that TURN with a small radius-scaled tolerance. Remaining observations fall back to a nearby waypoint or route leg. This means EBL/VRM observations placed before a waypoint at wheel-over are included instead of disappearing from the report.
 
 ![Route Report CSV opened in Numbers](screenshots/Screenshot%202026-10-12%20at%2016.05.50.png)
 
-*CSV route report opened in Numbers, combining route legs, PIL and EBL/VRM passage-planning information.*
+*CSV route report opened in Numbers, combining route legs, TURN, PIL and EBL/VRM passage-planning information.*
 
 ## Route GPX
 
@@ -201,7 +209,7 @@ cmake --build build -j 4
 
 ## Public release / OpenCPN community
 
-See [docs/PUBLIC_RELEASE.md](docs/PUBLIC_RELEASE.md) for the planned path from the current development preview to an OpenCPN Plugin Manager beta release.
+See [docs/PUBLIC_RELEASE.md](docs/PUBLIC_RELEASE.md) for the path from development builds to OpenCPN Plugin Manager catalog releases.
 
 ## Documentation
 

@@ -583,6 +583,7 @@ void route_toolbar_pi::DrawTurnGL(PlugIn_ViewPort* vp,
 
 void route_toolbar_pi::LoadTurnPersistentState(wxFileConfig* config) {
   m_turns.clear();
+  m_turn_state_load_incomplete = false;
   if (!config) return;
 
   config->SetPath("/PlugIns/RouteToolbar/TURN");
@@ -628,12 +629,16 @@ void route_toolbar_pi::LoadTurnPersistentState(wxFileConfig* config) {
       rebuilt.label_dx_px = static_cast<int>(label_dx);
       rebuilt.label_dy_px = static_cast<int>(label_dy);
       m_turns.push_back(rebuilt);
+    } else {
+      m_turn_state_load_incomplete = true;
     }
   }
 }
 
 void route_toolbar_pi::SaveTurnPersistentState(wxFileConfig* config) const {
   if (!config) return;
+
+  if (m_turn_state_load_incomplete) return;
 
   config->SetPath("/PlugIns/RouteToolbar");
   config->DeleteGroup("TURN");
