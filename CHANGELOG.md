@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.11 — 2026-10-21
+
+### Added
+
+- Route Report now includes TURN planning information alongside waypoint, leg, PIL and EBL/VRM data
+- TURN report data includes inbound/outbound course, course change and side, radius, wheel-over/tangent distance and optional planned rudder
+
+### Fixed
+
+- route EBL/VRM objects no longer need to start almost exactly on a waypoint to appear in PDF/CSV reports
+- free-point EBL/VRM starts on TURN geometry are associated with the relevant TURN waypoint using tangent/arc/turn-zone geometry with a small tolerance
+- remaining route EBL/VRM starts fall back to nearby route waypoint or route-leg association, preventing valid pilotage observations from disappearing from reports
+- PDF and CSV report association now use the same route-aware rules
+
+### Changed
+
+- Route Report summaries now include TURN count
+- report output is structured around the selected OpenCPN route and its planning objects in route order
+- project version advanced to 0.5.11
+
 ## 0.5.9 — 2026-10-12
 
 ### Changed
