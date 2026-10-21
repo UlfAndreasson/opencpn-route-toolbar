@@ -37,7 +37,15 @@ RouteLegLabelGeometry BuildRouteLegLabelGeometry(const wxPoint& a,
 
   double ux = dx / length;
   double uy = dy / length;
-  if (ux < 0.0 || (std::abs(ux) < 1e-9 && uy > 0.0)) {
+
+  // Standard chart-reading orientation:
+  // - shallow legs: text reads left -> right with north up
+  // - steep legs:   text reads bottom -> top, readable when the chart
+  //                 is viewed with west up / rotated 90 deg clockwise
+  const bool shallow = std::abs(dx) >= std::abs(dy);
+
+  if ((shallow && ux < 0.0) ||
+      (!shallow && uy > 0.0)) {
     ux = -ux;
     uy = -uy;
   }

@@ -48,7 +48,7 @@
 namespace {
 constexpr int kPluginVersionMajor = 0;
 constexpr int kPluginVersionMinor = 5;
-constexpr int kPluginVersionPatch = 10;
+constexpr int kPluginVersionPatch = 11;
 constexpr double kWaypointPickRadiusNm = 0.10;
 constexpr double kTargetPickRadiusNm = 0.025;
 constexpr double kTurnAnchorPickRadiusNm = 0.025;
@@ -325,6 +325,16 @@ void route_toolbar_pi::OnDelayedStateLoad() {
     m_delayed_state_load->Stop();
 
   LoadPersistentState();
+
+  if (m_turn_state_load_incomplete && m_state_load_retry_count < 5) {
+    ++m_state_load_retry_count;
+
+    if (m_delayed_state_load)
+      m_delayed_state_load->StartOnce(2000);
+
+    return;
+  }
+
   m_state_loaded = true;
 
   // Register chart context-menu entries only after OpenCPN startup.

@@ -27,23 +27,21 @@ constexpr double kHeadH = 22.0;
 constexpr double kWaypointToleranceNm = 0.03;
 constexpr double kLegToleranceNm = 0.05;
 
-const std::vector<double> kWidths = {
-    24, 52, 68, 72, 42, 42, 86, 88, 72, 42, 44, 72, 90};
+std::vector<double> kWidths = {
+    24, 52, 68, 72, 42, 42, 135, 85, 180, 46, 48};
 const std::vector<wxString> kHeaders = {
     "WP", "Waypoint", "Latitude", "Longitude", "Course °T", "Dist NM",
-    "TURN", "PIL", "Sight mark", "EBL °T", "Range NM", "Sight lat", "Sight lon"};
+    "TURN", "PIL", "Sight mark", "EBL °T", "Range NM"};
 
-const std::vector<double> kMarkWidths = {96, 102, 108, 122, 66, 70, 108, 122};
+const std::vector<double> kMarkWidths = {120, 100, 105, 220, 70, 70};
 const std::vector<wxString> kMarkHeaders = {
     "Start mark", "Start lat", "Start lon", "Sight mark",
-    "EBL °T", "Range NM", "Sight lat", "Sight lon"};
+    "EBL °T", "Range NM"};
 
 struct SightRow {
   wxString name;
   double bearing{0.0};
   double range_nm{0.0};
-  double lat{0.0};
-  double lon{0.0};
 };
 
 struct WaypointRow {
@@ -51,8 +49,8 @@ struct WaypointRow {
   double lon{0.0};
   wxString guid;
   wxString name;
-  double course{NAN};
-  double distance{NAN};
+  double course_from_previous{NAN};
+  double distance_from_previous{NAN};
   std::vector<wxString> turns;
   std::vector<wxString> pils;
   std::vector<SightRow> sights;
@@ -65,8 +63,6 @@ struct MarkEblRow {
   wxString sight_name;
   double bearing{0.0};
   double range_nm{0.0};
-  double sight_lat{0.0};
-  double sight_lon{0.0};
 };
 
 wxString Coord(double value, bool latitude) {
@@ -277,8 +273,8 @@ void route_toolbar_pi::ExportRoutePdfReport() {
     double course = 0.0, distance = 0.0;
     DistanceBearingMercator_Plugin(rows[i + 1].lat, rows[i + 1].lon,
                                    rows[i].lat, rows[i].lon, &course, &distance);
-    rows[i].course = NormalizeBearing(course);
-    rows[i].distance = distance;
+    rows[i + 1].course_from_previous = NormalizeBearing(course);
+    rows[i + 1].distance_from_previous = distance;
     total += distance;
   }
 
@@ -308,8 +304,8 @@ void route_toolbar_pi::ExportRoutePdfReport() {
     const bool same_route = pil.route_guid == route_guid ||
         (pil.route_guid.IsEmpty() && pil.route_name == route_name);
     if (!same_route || pil.leg_index <= 0 ||
-        static_cast<size_t>(pil.leg_index) > rows.size()) continue;
-    rows[static_cast<size_t>(pil.leg_index - 1)].pils.push_back(
+        static_cast<size_t>(pil.leg_index) >= rows.size()) continue;
+    rows[static_cast<size_t>(pil.leg_index)].pils.push_back(
         wxString::Format("%s: %.2f NM", pil.offset_nm >= 0.0 ? "SB" : "BB",
                          std::fabs(pil.offset_nm)));
     ++pil_count;
@@ -351,7 +347,7 @@ void route_toolbar_pi::ExportRoutePdfReport() {
         FindNearestRouteLeg(ebl.start_lat, ebl.start_lon, kLegToleranceNm);
     if (leg_hit.found && leg_hit.route_guid == route_guid && leg_hit.leg_index > 0 &&
         static_cast<size_t>(leg_hit.leg_index) <= rows.size())
-      return leg_hit.leg_index - 1;
+      return leg_hit.leg_index;
     return -1;
   };
 
@@ -364,8 +360,7 @@ void route_toolbar_pi::ExportRoutePdfReport() {
       wxString start_name = ebl.start_mark_name;
       if (start_name.IsEmpty()) start_name = _("Mark");
       mark_rows.push_back({start_name, ebl.start_lat, ebl.start_lon,
-                           ebl.target_name, ebl.bearing_true, ebl.range_nm,
-                           ebl.target_lat, ebl.target_lon});
+                           ebl.target_name, ebl.bearing_true, ebl.range_nm});
       continue;
     }
     const bool same_route = stored.route_guid == route_guid ||
@@ -374,10 +369,99 @@ void route_toolbar_pi::ExportRoutePdfReport() {
     const int row = ebl_row(stored);
     if (row < 0) continue;
     rows[static_cast<size_t>(row)].sights.push_back(
-        {stored.target_name, stored.bearing_true, stored.range_nm,
-         stored.target_lat, stored.target_lon});
+        {stored.target_name, stored.bearing_true, stored.range_nm});
     ++route_sight_count;
   }
+
+  // Dynamically distribute the available A4 landscape width between
+  // TURN, PIL and Sight mark according to the actual report contents.
+  // The fixed columns use 394 pt, leaving 400 pt for these three.
+  auto required_width = [](size_t chars, double font_size,
+                           double min_width, double max_width) {
+    const double estimated =
+        8.0 + static_cast<double>(chars) * font_size * 0.52;
+    return std::clamp(estimated, min_width, max_width);
+  };
+
+  size_t max_turn_chars = wxString("TURN").length();
+  size_t max_pil_chars = wxString("PIL").length();
+  size_t max_sight_chars = wxString("Sight mark").length();
+
+  for (const WaypointRow& row : rows) {
+    for (const wxString& value : row.turns)
+      max_turn_chars = std::max(max_turn_chars, value.length());
+
+    for (const wxString& value : row.pils)
+      max_pil_chars = std::max(max_pil_chars, value.length());
+
+    for (const SightRow& value : row.sights)
+      max_sight_chars = std::max(max_sight_chars, value.name.length());
+  }
+
+  constexpr double dynamic_budget = 400.0;
+
+  constexpr double turn_min = 100.0;
+  constexpr double turn_max = 175.0;
+
+  constexpr double pil_min = 65.0;
+  constexpr double pil_max = 105.0;
+
+  constexpr double sight_min = 120.0;
+  constexpr double sight_max = 220.0;
+
+  double turn_w =
+      required_width(max_turn_chars, 6.5, turn_min, turn_max);
+  double pil_w =
+      required_width(max_pil_chars, 7.0, pil_min, pil_max);
+  double sight_w =
+      required_width(max_sight_chars, 7.0, sight_min, sight_max);
+
+  double used = turn_w + pil_w + sight_w;
+
+  // Too wide: reduce only the flexible part above each minimum.
+  if (used > dynamic_budget) {
+    const double reducible =
+        (turn_w - turn_min) +
+        (pil_w - pil_min) +
+        (sight_w - sight_min);
+
+    const double excess = used - dynamic_budget;
+
+    if (reducible > 0.0) {
+      const double keep =
+          std::max(0.0, 1.0 - excess / reducible);
+
+      turn_w =
+          turn_min + (turn_w - turn_min) * keep;
+      pil_w =
+          pil_min + (pil_w - pil_min) * keep;
+      sight_w =
+          sight_min + (sight_w - sight_min) * keep;
+    }
+  }
+
+  // Spare space goes primarily to Sight mark, then TURN, then PIL.
+  used = turn_w + pil_w + sight_w;
+  double spare = std::max(0.0, dynamic_budget - used);
+
+  double add = std::min(spare, sight_max - sight_w);
+  sight_w += add;
+  spare -= add;
+
+  add = std::min(spare, turn_max - turn_w);
+  turn_w += add;
+  spare -= add;
+
+  add = std::min(spare, pil_max - pil_w);
+  pil_w += add;
+  spare -= add;
+
+  // Any tiny remainder goes to Sight mark rather than making TURN huge.
+  sight_w += spare;
+
+  kWidths[6] = turn_w;
+  kWidths[7] = pil_w;
+  kWidths[8] = sight_w;
 
   PdfDoc pdf;
   Canvas page;
@@ -403,8 +487,12 @@ void route_toolbar_pi::ExportRoutePdfReport() {
     const std::vector<wxString> base = {
         wxString::Format("%lu", static_cast<unsigned long>(i + 1)), wp.name,
         Coord(wp.lat, true), Coord(wp.lon, false),
-        std::isfinite(wp.course) ? wxString::Format("%03.0f", wp.course) : wxString(),
-        std::isfinite(wp.distance) ? wxString::Format("%.2f", wp.distance) : wxString()};
+        std::isfinite(wp.course_from_previous)
+            ? wxString::Format("%03.0f", wp.course_from_previous)
+            : wxString(),
+        std::isfinite(wp.distance_from_previous)
+            ? wxString::Format("%.2f", wp.distance_from_previous)
+            : wxString()};
     for (size_t col = 0; col < 6; ++col) {
       page.Rect(x, y, kWidths[col], h, fill);
       page.Text(x + 3, y + 6, Fit(base[col], kWidths[col]), 7.0, col == 0);
@@ -428,8 +516,7 @@ void route_toolbar_pi::ExportRoutePdfReport() {
         const SightRow& sight = wp.sights[r];
         const std::vector<wxString> values = {
             sight.name, wxString::Format("%03.0f", sight.bearing),
-            wxString::Format("%.2f", sight.range_nm),
-            Coord(sight.lat, true), Coord(sight.lon, false)};
+            wxString::Format("%.2f", sight.range_nm)};
         for (size_t col = 0; col < values.size(); ++col) {
           const size_t wi = col + 8;
           page.Text(sx + 3, ry + 6, Fit(values[col], kWidths[wi]), 7.0);
@@ -456,8 +543,7 @@ void route_toolbar_pi::ExportRoutePdfReport() {
       const std::vector<wxString> vals = {
           row.start_name, Coord(row.start_lat, true), Coord(row.start_lon, false),
           row.sight_name, wxString::Format("%03.0f", row.bearing),
-          wxString::Format("%.2f", row.range_nm), Coord(row.sight_lat, true),
-          Coord(row.sight_lon, false)};
+          wxString::Format("%.2f", row.range_nm)};
       double x = kMargin;
       for (size_t c = 0; c < kMarkWidths.size(); ++c) {
         page.Rect(x, y, kMarkWidths[c], kRowH, fill);

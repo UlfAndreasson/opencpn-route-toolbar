@@ -393,5 +393,9 @@ private:
   double m_context_click_lat{0.0};
   double m_context_click_lon{0.0};
   bool m_has_context_click{false};
+
+  bool m_turn_state_load_incomplete{false};
+  int m_state_load_retry_count{0};
+
   bool m_state_loaded{false};
 };
