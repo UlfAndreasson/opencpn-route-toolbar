@@ -42,8 +42,11 @@ RouteLegLabelGeometry BuildRouteLegLabelGeometry(const wxPoint& a,
     uy = -uy;
   }
 
-  double nx = dy / length;
-  double ny = -dx / length;
+  // Build the normal from the already-normalized reading direction.  Using
+  // the original dx/dy here can produce a reflected (mirrored) quad when the
+  // leg direction is flipped to keep text readable.
+  double nx = uy;
+  double ny = -ux;
   if (std::abs(dx) >= std::abs(dy)) {
     if (ny > 0.0) {
       nx = -nx;
