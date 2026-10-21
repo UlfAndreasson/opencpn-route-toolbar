@@ -24,12 +24,14 @@ constexpr double kMargin = 24.0;
 constexpr double kBottom = 558.0;
 constexpr double kRowH = 18.0;
 constexpr double kHeadH = 22.0;
+constexpr double kWaypointToleranceNm = 0.03;
+constexpr double kLegToleranceNm = 0.05;
 
 const std::vector<double> kWidths = {
-    26, 58, 76, 80, 46, 46, 112, 84, 45, 48, 80, 93};
+    24, 52, 68, 72, 42, 42, 86, 88, 72, 42, 44, 72, 90};
 const std::vector<wxString> kHeaders = {
     "WP", "Waypoint", "Latitude", "Longitude", "Course °T", "Dist NM",
-    "PIL", "Sight mark", "EBL °T", "Range NM", "Sight lat", "Sight lon"};
+    "TURN", "PIL", "Sight mark", "EBL °T", "Range NM", "Sight lat", "Sight lon"};
 
 const std::vector<double> kMarkWidths = {96, 102, 108, 122, 66, 70, 108, 122};
 const std::vector<wxString> kMarkHeaders = {
@@ -51,6 +53,7 @@ struct WaypointRow {
   wxString name;
   double course{NAN};
   double distance{NAN};
+  std::vector<wxString> turns;
   std::vector<wxString> pils;
   std::vector<SightRow> sights;
 };
@@ -84,6 +87,16 @@ wxString SafeName(wxString name) {
   return name.IsEmpty() ? wxString("route") : name;
 }
 
+wxString TurnText(double inbound, double outbound, double angle,
+                  double radius, double tangent, double rudder) {
+  wxString text = wxString::Format("%03.0f>%03.0f D%.0f %s R%.2f WO%.3f",
+                                   inbound, outbound, std::fabs(angle),
+                                   angle >= 0.0 ? "SB" : "BB", radius, tangent);
+  if (rudder > 0.0)
+    text += wxString::Format(" Rud%.0f", rudder);
+  return text;
+}
+
 std::string PdfText(const wxString& text) {
   std::string out;
   out.reserve(text.length() + 8);
@@ -105,14 +118,12 @@ wxString Fit(wxString text, double width, double size = 7.0) {
 
 struct Canvas {
   std::ostringstream s;
-
   void Rect(double x, double y, double w, double h, double fill = 1.0) {
     s << std::fixed << std::setprecision(2) << fill << " g " << x << ' '
       << (kPageH - y - h) << ' ' << w << ' ' << h << " re f\n"
       << "0.70 G 0.45 w " << x << ' ' << (kPageH - y - h) << ' ' << w
       << ' ' << h << " re S\n";
   }
-
   void Text(double x, double y, const wxString& text, double size = 7.0,
             bool bold = false) {
     if (text.IsEmpty()) return;
@@ -126,7 +137,6 @@ struct Canvas {
 class PdfDoc {
 public:
   void AddPage(const std::string& page) { pages_.push_back(page); }
-
   bool Save(const wxString& path) const {
     if (pages_.empty()) return false;
     const int count = 4 + static_cast<int>(pages_.size()) * 2;
@@ -134,7 +144,6 @@ public:
     obj[1] = "<< /Type /Catalog /Pages 2 0 R >>";
     obj[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
     obj[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
-
     std::ostringstream kids;
     kids << '[';
     for (size_t i = 0; i < pages_.size(); ++i) {
@@ -150,7 +159,6 @@ public:
     kids << ']';
     obj[2] = "<< /Type /Pages /Kids " + kids.str() + " /Count " +
              std::to_string(pages_.size()) + " >>";
-
     std::ostringstream out;
     out << "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
     std::vector<long long> offsets(static_cast<size_t>(count + 1));
@@ -165,7 +173,6 @@ public:
           << " 00000 n \n";
     out << "trailer\n<< /Size " << count + 1
         << " /Root 1 0 R >>\nstartxref\n" << xref << "\n%%EOF\n";
-
     const std::string bytes = out.str();
     wxFFile f(path, "wb");
     if (!f.IsOpened()) return false;
@@ -173,7 +180,6 @@ public:
     f.Close();
     return true;
   }
-
 private:
   std::vector<std::string> pages_;
 };
@@ -196,17 +202,14 @@ void MarkTableHeader(Canvas& c, double y) {
   }
 }
 
-void PageHeader(Canvas& c, const wxString& route, double total,
-                bool continued) {
+void PageHeader(Canvas& c, const wxString& route, double total, bool continued) {
   c.Text(kMargin, 20,
          continued ? "Route Report - " + route + " (continued)"
                    : "Route Report - " + route,
          14.0, true);
   if (!continued) {
-    c.Text(kMargin, 42,
-           "Generated: " + wxDateTime::Now().FormatISOCombined(' '), 8.0);
-    c.Text(330, 42, wxString::Format("Route distance: %.2f NM", total), 8.0,
-           true);
+    c.Text(kMargin, 42, "Generated: " + wxDateTime::Now().FormatISOCombined(' '), 8.0);
+    c.Text(330, 42, wxString::Format("Route distance: %.2f NM", total), 8.0, true);
   }
   TableHeader(c, continued ? 50.0 : 62.0);
 }
@@ -222,8 +225,7 @@ void MarkPageHeader(Canvas& c, const wxString& route, bool continued) {
 
 void route_toolbar_pi::ExportRoutePdfReport() {
   CancelInteractiveTool();
-  wxWindow* parent = m_dialog ? static_cast<wxWindow*>(m_dialog)
-                              : m_parent_window;
+  wxWindow* parent = m_dialog ? static_cast<wxWindow*>(m_dialog) : m_parent_window;
 
   const wxArrayString guids = GetRouteGUIDArray();
   if (guids.IsEmpty()) {
@@ -240,19 +242,15 @@ void route_toolbar_pi::ExportRoutePdfReport() {
     wxString name = route->m_NameString;
     if (name.IsEmpty()) name = _("Unnamed route");
     size_t n = 0;
-    for (auto node = route->pWaypointList->GetFirst(); node; node = node->GetNext())
-      ++n;
-    choices.Add(wxString::Format("%s  (%lu WP)", name,
-                                 static_cast<unsigned long>(n)));
+    for (auto node = route->pWaypointList->GetFirst(); node; node = node->GetNext()) ++n;
+    choices.Add(wxString::Format("%s  (%lu WP)", name, static_cast<unsigned long>(n)));
     mapping.push_back(i);
   }
   if (choices.IsEmpty()) return;
 
   const int selected = ShowActionButtons(
       _("Route Report - PDF"),
-      _("Select the OpenCPN route to include in the PDF report."),
-      choices);
-  if (selected < 0) return;
+      _("Select the OpenCPN route to include in the PDF report."), choices);
   if (selected < 0 || static_cast<size_t>(selected) >= mapping.size()) return;
 
   const wxString route_guid = guids[mapping[static_cast<size_t>(selected)]];
@@ -278,68 +276,107 @@ void route_toolbar_pi::ExportRoutePdfReport() {
   for (size_t i = 0; i + 1 < rows.size(); ++i) {
     double course = 0.0, distance = 0.0;
     DistanceBearingMercator_Plugin(rows[i + 1].lat, rows[i + 1].lon,
-                                   rows[i].lat, rows[i].lon,
-                                   &course, &distance);
+                                   rows[i].lat, rows[i].lon, &course, &distance);
     rows[i].course = NormalizeBearing(course);
     rows[i].distance = distance;
     total += distance;
   }
 
-  size_t route_sight_count = 0;
-  for (WaypointRow& wp : rows) {
-    for (const RouteEblVrm& ebl : m_ebl_vrms) {
-      if (ebl.start_is_mark) continue;
-      const bool same_route = ebl.route_guid == route_guid ||
-          (ebl.route_guid.IsEmpty() && ebl.route_name == route_name);
-      if (!same_route) continue;
-      bool same_wp = !wp.guid.IsEmpty() && ebl.waypoint_guid == wp.guid;
-      if (!same_wp && ebl.waypoint_guid.IsEmpty()) {
-        double d = 0.0;
-        DistanceBearingMercator_Plugin(wp.lat, wp.lon, ebl.start_lat,
-                                       ebl.start_lon, nullptr, &d);
-        same_wp = d <= 0.002;
-      }
-      if (!same_wp) continue;
-      wp.sights.push_back({ebl.target_name, ebl.bearing_true, ebl.range_nm,
-                           ebl.target_lat, ebl.target_lon});
-      ++route_sight_count;
-    }
-  }
+  auto row_for_guid = [&](const wxString& guid) -> int {
+    if (guid.IsEmpty()) return -1;
+    for (size_t i = 0; i < rows.size(); ++i)
+      if (rows[i].guid == guid) return static_cast<int>(i);
+    return -1;
+  };
 
-  std::vector<MarkEblRow> mark_rows;
-  for (const RouteEblVrm& stored : m_ebl_vrms) {
-    if (!stored.start_is_mark) continue;
-    RouteEblVrm ebl = stored;
-    RecalculateEbl(ebl);
-    wxString start_name = ebl.start_mark_name;
-    if (start_name.IsEmpty()) start_name = _("Mark");
-    mark_rows.push_back({start_name, ebl.start_lat, ebl.start_lon,
-                         ebl.target_name, ebl.bearing_true, ebl.range_nm,
-                         ebl.target_lat, ebl.target_lon});
+  std::vector<const RouteTurn*> route_turns;
+  for (const RouteTurn& turn : m_turns) {
+    const bool same_route = turn.route_guid == route_guid ||
+        (turn.route_guid.IsEmpty() && turn.route_name == route_name);
+    if (!same_route) continue;
+    route_turns.push_back(&turn);
+    const int row = row_for_guid(turn.waypoint_guid);
+    if (row >= 0)
+      rows[static_cast<size_t>(row)].turns.push_back(
+          TurnText(turn.inbound_course_true, turn.outbound_course_true,
+                   turn.turn_angle_deg, turn.radius_nm, turn.tangent_nm,
+                   turn.rudder_angle_deg));
   }
 
   size_t pil_count = 0;
-
   for (const RoutePil& pil : m_pils) {
-    const bool same_route =
-        pil.route_guid == route_guid ||
-        (pil.route_guid.IsEmpty() &&
-         pil.route_name == route_name);
-
-    if (!same_route ||
-        pil.leg_index <= 0 ||
-        static_cast<size_t>(pil.leg_index) > rows.size())
-      continue;
-
-    WaypointRow& row =
-        rows[static_cast<size_t>(pil.leg_index - 1)];
-
-    row.pils.push_back(
-        wxString::Format("%s: %.2f NM",
-                         pil.offset_nm >= 0.0 ? "SB" : "BB",
+    const bool same_route = pil.route_guid == route_guid ||
+        (pil.route_guid.IsEmpty() && pil.route_name == route_name);
+    if (!same_route || pil.leg_index <= 0 ||
+        static_cast<size_t>(pil.leg_index) > rows.size()) continue;
+    rows[static_cast<size_t>(pil.leg_index - 1)].pils.push_back(
+        wxString::Format("%s: %.2f NM", pil.offset_nm >= 0.0 ? "SB" : "BB",
                          std::fabs(pil.offset_nm)));
-
     ++pil_count;
+  }
+
+  auto ebl_row = [&](const RouteEblVrm& ebl) -> int {
+    if (ebl.start_is_turn) {
+      const int row = row_for_guid(ebl.start_turn_waypoint_guid);
+      if (row >= 0) return row;
+    }
+    {
+      const int row = row_for_guid(ebl.waypoint_guid);
+      if (row >= 0) return row;
+    }
+    for (const RouteTurn* turn : route_turns) {
+      const double tol = std::clamp(turn->radius_nm * 0.25, 0.02, 0.05);
+      double ds = 0.0, de = 0.0, dc = 0.0, dw = 0.0;
+      DistanceBearingMercator_Plugin(turn->start_lat, turn->start_lon,
+                                     ebl.start_lat, ebl.start_lon, nullptr, &ds);
+      DistanceBearingMercator_Plugin(turn->end_lat, turn->end_lon,
+                                     ebl.start_lat, ebl.start_lon, nullptr, &de);
+      DistanceBearingMercator_Plugin(turn->center_lat, turn->center_lon,
+                                     ebl.start_lat, ebl.start_lon, nullptr, &dc);
+      DistanceBearingMercator_Plugin(turn->waypoint_lat, turn->waypoint_lon,
+                                     ebl.start_lat, ebl.start_lon, nullptr, &dw);
+      if (ds <= tol || de <= tol || std::fabs(dc - turn->radius_nm) <= tol ||
+          dw <= turn->tangent_nm + tol) {
+        const int row = row_for_guid(turn->waypoint_guid);
+        if (row >= 0) return row;
+      }
+    }
+    const RouteWaypointHit wp_hit =
+        FindNearestRouteWaypoint(ebl.start_lat, ebl.start_lon, kWaypointToleranceNm);
+    if (wp_hit.found && wp_hit.route_guid == route_guid) {
+      const int row = row_for_guid(wp_hit.waypoint_guid);
+      if (row >= 0) return row;
+    }
+    const RouteLegHit leg_hit =
+        FindNearestRouteLeg(ebl.start_lat, ebl.start_lon, kLegToleranceNm);
+    if (leg_hit.found && leg_hit.route_guid == route_guid && leg_hit.leg_index > 0 &&
+        static_cast<size_t>(leg_hit.leg_index) <= rows.size())
+      return leg_hit.leg_index - 1;
+    return -1;
+  };
+
+  size_t route_sight_count = 0;
+  std::vector<MarkEblRow> mark_rows;
+  for (const RouteEblVrm& stored : m_ebl_vrms) {
+    if (stored.start_is_mark) {
+      RouteEblVrm ebl = stored;
+      RecalculateEbl(ebl);
+      wxString start_name = ebl.start_mark_name;
+      if (start_name.IsEmpty()) start_name = _("Mark");
+      mark_rows.push_back({start_name, ebl.start_lat, ebl.start_lon,
+                           ebl.target_name, ebl.bearing_true, ebl.range_nm,
+                           ebl.target_lat, ebl.target_lon});
+      continue;
+    }
+    const bool same_route = stored.route_guid == route_guid ||
+        (stored.route_guid.IsEmpty() && stored.route_name == route_name);
+    if (!same_route) continue;
+    const int row = ebl_row(stored);
+    if (row < 0) continue;
+    rows[static_cast<size_t>(row)].sights.push_back(
+        {stored.target_name, stored.bearing_true, stored.range_nm,
+         stored.target_lat, stored.target_lon});
+    ++route_sight_count;
   }
 
   PdfDoc pdf;
@@ -353,156 +390,61 @@ void route_toolbar_pi::ExportRoutePdfReport() {
 
   for (size_t i = 0; i < rows.size(); ++i) {
     const WaypointRow& wp = rows[i];
-
-    const size_t detail_rows =
-        std::max<size_t>(
-            1,
-            std::max(wp.sights.size(), wp.pils.size()));
-
+    const size_t detail_rows = std::max<size_t>(
+        1, std::max(wp.sights.size(), std::max(wp.turns.size(), wp.pils.size())));
     const double h = detail_rows * kRowH;
-
     if (y + h > kBottom) {
       finish_page();
       PageHeader(page, route_name, total, true);
       y = 50.0 + kHeadH;
     }
-
-    const double fill =
-        (i % 2 == 0) ? 0.985 : 0.955;
-
-    // --------------------------------------------------------
-    // Fixed WP/leg columns span the complete WP block.
-    // --------------------------------------------------------
-
+    const double fill = (i % 2 == 0) ? 0.985 : 0.955;
     double x = kMargin;
-
     const std::vector<wxString> base = {
-        wxString::Format(
-            "%lu",
-            static_cast<unsigned long>(i + 1)),
-        wp.name,
-        Coord(wp.lat, true),
-        Coord(wp.lon, false),
-        std::isfinite(wp.course)
-            ? wxString::Format("%03.0f", wp.course)
-            : wxString(),
-        std::isfinite(wp.distance)
-            ? wxString::Format("%.2f", wp.distance)
-            : wxString()
-    };
-
+        wxString::Format("%lu", static_cast<unsigned long>(i + 1)), wp.name,
+        Coord(wp.lat, true), Coord(wp.lon, false),
+        std::isfinite(wp.course) ? wxString::Format("%03.0f", wp.course) : wxString(),
+        std::isfinite(wp.distance) ? wxString::Format("%.2f", wp.distance) : wxString()};
     for (size_t col = 0; col < 6; ++col) {
       page.Rect(x, y, kWidths[col], h, fill);
-      page.Text(
-          x + 3,
-          y + 6,
-          Fit(base[col], kWidths[col]),
-          7.0,
-          col == 0);
-
+      page.Text(x + 3, y + 6, Fit(base[col], kWidths[col]), 7.0, col == 0);
       x += kWidths[col];
     }
 
-    // --------------------------------------------------------
-    // Detail rows:
-    // PIL + corresponding EBL/VRM sight information.
-    // --------------------------------------------------------
-
     const double detail_x = x;
-
     for (size_t r = 0; r < detail_rows; ++r) {
       const double ry = y + r * kRowH;
       double sx = detail_x;
-
-      // PIL
-      page.Rect(
-          sx, ry,
-          kWidths[6],
-          kRowH,
-          fill);
-
-      if (r < wp.pils.size()) {
-        page.Text(
-            sx + 3,
-            ry + 6,
-            Fit(wp.pils[r], kWidths[6]),
-            7.0);
-      }
-
-      sx += kWidths[6];
-
-      // Sight-mark columns.
-      for (size_t col = 7;
-           col < kWidths.size();
-           ++col) {
-        page.Rect(
-            sx, ry,
-            kWidths[col],
-            kRowH,
-            fill);
-
+      for (size_t col = 6; col < kWidths.size(); ++col) {
+        page.Rect(sx, ry, kWidths[col], kRowH, fill);
         sx += kWidths[col];
       }
-
+      sx = detail_x;
+      if (r < wp.turns.size()) page.Text(sx + 3, ry + 6, Fit(wp.turns[r], kWidths[6]), 6.5);
+      sx += kWidths[6];
+      if (r < wp.pils.size()) page.Text(sx + 3, ry + 6, Fit(wp.pils[r], kWidths[7]), 7.0);
+      sx += kWidths[7];
       if (r < wp.sights.size()) {
         const SightRow& sight = wp.sights[r];
-
         const std::vector<wxString> values = {
-            sight.name,
-            wxString::Format(
-                "%03.0f",
-                sight.bearing),
-            wxString::Format(
-                "%.2f",
-                sight.range_nm),
-            Coord(sight.lat, true),
-            Coord(sight.lon, false)
-        };
-
-        sx = detail_x + kWidths[6];
-
-        for (size_t col = 0;
-             col < values.size();
-             ++col) {
-          const size_t width_index = col + 7;
-
-          page.Text(
-              sx + 3,
-              ry + 6,
-              Fit(
-                  values[col],
-                  kWidths[width_index]),
-              7.0);
-
-          sx += kWidths[width_index];
+            sight.name, wxString::Format("%03.0f", sight.bearing),
+            wxString::Format("%.2f", sight.range_nm),
+            Coord(sight.lat, true), Coord(sight.lon, false)};
+        for (size_t col = 0; col < values.size(); ++col) {
+          const size_t wi = col + 8;
+          page.Text(sx + 3, ry + 6, Fit(values[col], kWidths[wi]), 7.0);
+          sx += kWidths[wi];
         }
       }
     }
-
     y += h;
   }
 
   const size_t total_sights = route_sight_count + mark_rows.size();
-  if (mark_rows.empty()) {
-    if (y + 28.0 > kBottom) {
-      finish_page();
-      page.Text(kMargin, 28, "Route Report - " + route_name, 14.0, true);
-      y = 54.0;
-    } else {
-      y += 18.0;
-    }
-    page.Text(kMargin, y,
-              wxString::Format("Summary: %lu waypoints, %lu EBL/VRM sight marks, %lu PIL, %.2f NM total",
-                               static_cast<unsigned long>(rows.size()),
-                               static_cast<unsigned long>(total_sights),
-                               static_cast<unsigned long>(pil_count), total),
-              8.0, true);
-    finish_page();
-  } else {
+  if (!mark_rows.empty()) {
     finish_page();
     MarkPageHeader(page, route_name, false);
     y = 50.0 + kHeadH;
-
     for (size_t i = 0; i < mark_rows.size(); ++i) {
       if (y + kRowH > kBottom) {
         finish_page();
@@ -524,36 +466,35 @@ void route_toolbar_pi::ExportRoutePdfReport() {
       }
       y += kRowH;
     }
-
-    if (y + 28.0 > kBottom) {
-      finish_page();
-      page.Text(kMargin, 28, "Route Report - " + route_name, 14.0, true);
-      y = 54.0;
-    } else {
-      y += 18.0;
-    }
-    page.Text(kMargin, y,
-              wxString::Format("Summary: %lu waypoints, %lu EBL/VRM sight marks (%lu from marks), %lu PIL, %.2f NM total",
-                               static_cast<unsigned long>(rows.size()),
-                               static_cast<unsigned long>(total_sights),
-                               static_cast<unsigned long>(mark_rows.size()),
-                               static_cast<unsigned long>(pil_count), total),
-              8.0, true);
-    finish_page();
   }
+
+  if (y + 28.0 > kBottom) {
+    finish_page();
+    page.Text(kMargin, 28, "Route Report - " + route_name, 14.0, true);
+    y = 54.0;
+  } else {
+    y += 18.0;
+  }
+  page.Text(kMargin, y,
+            wxString::Format(
+                "Summary: %lu waypoints, %lu TURN, %lu EBL/VRM sight marks, %lu PIL, %.2f NM total",
+                static_cast<unsigned long>(rows.size()),
+                static_cast<unsigned long>(route_turns.size()),
+                static_cast<unsigned long>(total_sights),
+                static_cast<unsigned long>(pil_count), total),
+            8.0, true);
+  finish_page();
 
   const wxString default_name = SafeName(route_name) + "-route-report.pdf";
   wxFileDialog save(parent, _("Save Route Report PDF"), wxEmptyString,
                     default_name, _("PDF files (*.pdf)|*.pdf"),
                     wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
   if (save.ShowModal() != wxID_OK) return;
-
   if (!pdf.Save(save.GetPath())) {
     wxMessageBox(_("Could not create the PDF report."), _("Route Report"),
                  wxOK | wxICON_ERROR, parent);
     return;
   }
-
   SetStatus(_("Landscape PDF Route Report saved."));
   wxMessageDialog open(parent,
                        _("The landscape PDF Route Report has been saved. Open it now?"),
