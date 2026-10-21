@@ -1,6 +1,6 @@
 # Route Toolbar — Functional Specification
 
-## Version 0.5.8 scope
+## Version 0.5.11 scope
 
 Route Toolbar covers these primary workflows:
 
@@ -29,7 +29,7 @@ Requirements:
 - steep legs place the label immediately to the visual left of the line
 - label remains close to the line and does not clamp to viewport edges
 - leg info is rendered only while the source OpenCPN route is visible
-- leg info follows the global **Hide/View notes and leg info** control
+- leg info follows the global **Hide/View labels and leg info** control
 - labels do not alter route geometry
 - colour follows the normal route display colour available through OpenCPN plugin API 1.21
 
@@ -53,35 +53,35 @@ The chart overlay contains:
 - EBL line
 - target ring/crosshair
 - compact VRM arc
-- optional yellow information note
+- optional yellow information label
 
 Default VRM arc width is 30 degrees, centred on the EBL bearing.
 
-### Labels and notes
+### Labels
 
 Requirements:
 
 - stable automatic placement
-- manual placement and reset
+- manual placement through **Move labels** in Route Toolbar
 - manual placement survives restart
 - configurable font size
-- off-screen target notes are hidden
-- notes and leg info can be hidden/viewed globally
-- hiding notes/leg info leaves EBL/VRM, PIL and TURN geometry visible
-- global note/leg-info visibility survives restart
+- off-screen target labels are hidden
+- labels and leg info can be hidden/viewed globally
+- hiding labels/leg info leaves EBL/VRM, PIL and TURN geometry visible
+- global label/leg-info visibility survives restart
 
 ### Editing
 
 An EBL/VRM must be selectable near its start point, target/end point or the line between them.
 
-Available actions include:
+Available context actions include:
 
 - Move start point
 - Move target
-- Move label
-- Reset label position
 - Rename
-- Delete
+- Delete EBL/VRM
+
+Yellow EBL/VRM, PIL and TURN labels are repositioned using **Route Toolbar → Move labels**.
 
 ## Parallel Index Line
 
@@ -102,7 +102,7 @@ Requirements:
 - multiple PILs may exist on one leg
 - graphical editing has a live preview
 - PIL uses a compact/tight dashed pattern
-- PIL geometry remains visible when notes/leg info are globally hidden
+- PIL geometry remains visible when labels/leg info are globally hidden
 
 ## Route TURN
 
@@ -145,7 +145,7 @@ Persisted state includes:
 - route/waypoint/Mark/TURN associations
 - EBL/PIL/TURN colours
 - label size and manual positions
-- global notes/leg-info visibility
+- global labels/leg-info visibility
 
 State loading is delayed until OpenCPN navigation objects are available. An unloaded plugin must never overwrite valid persisted state with an empty object set during shutdown.
 
@@ -156,7 +156,25 @@ Outputs:
 - PDF A4 landscape
 - UTF-8 semicolon-separated CSV
 
-Route data includes waypoint sequence, coordinates, course, leg distance, PIL and EBL/VRM planning information.
+The report is built around the selected OpenCPN route and includes:
+
+- waypoint sequence and coordinates
+- true course and leg distance
+- TURN data: inbound/outbound course, turn side/course change, radius, wheel-over/tangent distance and optional planned rudder
+- all PIL offsets associated with each route leg
+- all EBL/VRM sight information associated with the route
+
+EBL/VRM report association follows route geometry rather than requiring an almost exact waypoint-coordinate match:
+
+1. explicit TURN association
+2. explicit waypoint association
+3. free-point start on/near TURN tangent/arc geometry, with a small radius-scaled tolerance
+4. nearby route waypoint fallback
+5. nearby route-leg fallback
+
+This ensures EBL/VRM starts placed before a waypoint at wheel-over/turn geometry are reported with the relevant TURN instead of being omitted.
+
+PDF and CSV must use the same association rules and report summaries must include waypoint, TURN, EBL/VRM and PIL counts.
 
 ## GPX package
 
@@ -188,7 +206,7 @@ See [GPX_FORMAT.md](GPX_FORMAT.md).
 
 ## Context menu
 
-Context-menu registration is deferred until OpenCPN initialization is sufficiently complete. EBL/VRM editing accepts a click close to its start point, target point or line. PIL editing accepts a click near the PIL line.
+Context-menu registration is deferred until OpenCPN initialization is sufficiently complete. EBL/VRM editing accepts a click close to its start point, target point, line or visible yellow label. PIL editing accepts a click near the PIL line or label.
 
 ## Rendering
 
@@ -197,7 +215,7 @@ Supported:
 - wxDC overlay rendering
 - OpenGL overlay rendering
 
-Both paths must implement object visibility, note/leg-info visibility, route visibility and route-leg labels consistently. macOS OpenGL deprecation warnings are expected during compilation and are not build failures.
+Both paths must implement object visibility, label/leg-info visibility, route visibility and route-leg labels consistently. macOS OpenGL deprecation warnings are expected during compilation and are not build failures.
 
 ## Safety constraints
 
