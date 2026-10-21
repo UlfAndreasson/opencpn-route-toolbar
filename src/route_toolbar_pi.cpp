@@ -2038,12 +2038,13 @@ void route_toolbar_pi::ShowObjectManager() {
       &dialog, wxID_ANY, wxDefaultPosition, wxDefaultSize,
       wxLC_REPORT | wxBORDER_SUNKEN);
 
-  list->AppendColumn(_("Shown"), wxLIST_FORMAT_LEFT, 60);
-  list->AppendColumn(_("Type"), wxLIST_FORMAT_LEFT, 85);
-  list->AppendColumn(_("Route"), wxLIST_FORMAT_LEFT, 180);
-  list->AppendColumn(_("Start / leg"), wxLIST_FORMAT_LEFT, 210);
-  list->AppendColumn(_("Target / waypoint"), wxLIST_FORMAT_LEFT, 240);
-  list->AppendColumn(_("Details"), wxLIST_FORMAT_LEFT, 270);
+  list->AppendColumn(_("Shown"), wxLIST_FORMAT_LEFT, 55);
+  list->AppendColumn(_("Type"), wxLIST_FORMAT_LEFT, 80);
+  list->AppendColumn(_("Route"), wxLIST_FORMAT_LEFT, 155);
+  list->AppendColumn(_("Assoc. WP"), wxLIST_FORMAT_LEFT, 85);
+  list->AppendColumn(_("Start / leg"), wxLIST_FORMAT_LEFT, 185);
+  list->AppendColumn(_("Target / waypoint"), wxLIST_FORMAT_LEFT, 220);
+  list->AppendColumn(_("Details"), wxLIST_FORMAT_LEFT, 245);
   top->Add(list, 1, wxEXPAND | wxLEFT | wxRIGHT, 10);
 
   auto selected_route = [&]() -> wxString {
@@ -2057,8 +2058,169 @@ void route_toolbar_pi::ShowObjectManager() {
     return filter.IsEmpty() || route_name == filter;
   };
 
+  struct ObjectListRow {
+    long code{0};
+    bool visible{true};
+    wxString type;
+    wxString route_name;
+    wxString assoc_wp;
+    wxString start_or_leg;
+    wxString target_or_waypoint;
+    wxString details;
+    int route_order{1000000};
+    int wp_order{1000000};
+    int type_order{9};
+    int sequence{0};
+  };
+
+  const wxArrayString open_route_guids = GetRouteGUIDArray();
+
+  auto resolve_route = [&](const wxString& route_guid,
+                           const wxString& route_name) {
+    auto route = GetRoute_Plugin(route_guid);
+    if (route) return route;
+
+    for (size_t i = 0; i < open_route_guids.GetCount(); ++i) {
+      auto candidate = GetRoute_Plugin(open_route_guids[i]);
+      if (!candidate) continue;
+      if (!route_name.IsEmpty() && candidate->m_NameString == route_name)
+        return candidate;
+    }
+
+    return route;
+  };
+
+  auto route_order_for = [&](const wxString& route_guid,
+                             const wxString& route_name) {
+    for (size_t i = 0; i < open_route_guids.GetCount(); ++i) {
+      if (!route_guid.IsEmpty() && open_route_guids[i] == route_guid)
+        return static_cast<int>(i);
+
+      auto route = GetRoute_Plugin(open_route_guids[i]);
+      if (route && !route_name.IsEmpty() &&
+          route->m_NameString == route_name)
+        return static_cast<int>(i);
+    }
+    return 1000000;
+  };
+
+  auto waypoint_index = [&](const wxString& route_guid,
+                            const wxString& route_name,
+                            const wxString& waypoint_guid) {
+    if (waypoint_guid.IsEmpty()) return -1;
+    auto route = resolve_route(route_guid, route_name);
+    if (!route || !route->pWaypointList) return -1;
+
+    int index = 0;
+    for (auto node = route->pWaypointList->GetFirst();
+         node; node = node->GetNext(), ++index) {
+      PlugIn_Waypoint* wp = node->GetData();
+      if (wp && wp->m_GUID == waypoint_guid) return index;
+    }
+    return -1;
+  };
+
+  auto associate_ebl_wp = [&](const RouteEblVrm& item) {
+    int index = -1;
+
+    if (item.start_is_turn) {
+      index = waypoint_index(
+          item.start_turn_route_guid.IsEmpty()
+              ? item.route_guid
+              : item.start_turn_route_guid,
+          item.route_name,
+          item.start_turn_waypoint_guid);
+      if (index >= 0) return index;
+    }
+
+    index = waypoint_index(item.route_guid, item.route_name,
+                           item.waypoint_guid);
+    if (index >= 0) return index;
+
+    for (const RouteTurn& turn : m_turns) {
+      const bool same_route =
+          turn.route_guid == item.route_guid ||
+          (!item.route_name.IsEmpty() &&
+           turn.route_name == item.route_name);
+      if (!same_route) continue;
+
+      const double tol =
+          std::clamp(turn.radius_nm * 0.25, 0.02, 0.05);
+
+      double ds = 0.0;
+      double de = 0.0;
+      double dc = 0.0;
+      double dw = 0.0;
+
+      DistanceBearingMercator_Plugin(
+          turn.start_lat, turn.start_lon,
+          item.start_lat, item.start_lon, nullptr, &ds);
+      DistanceBearingMercator_Plugin(
+          turn.end_lat, turn.end_lon,
+          item.start_lat, item.start_lon, nullptr, &de);
+      DistanceBearingMercator_Plugin(
+          turn.center_lat, turn.center_lon,
+          item.start_lat, item.start_lon, nullptr, &dc);
+      DistanceBearingMercator_Plugin(
+          turn.waypoint_lat, turn.waypoint_lon,
+          item.start_lat, item.start_lon, nullptr, &dw);
+
+      const bool in_turn_zone =
+          ds <= tol || de <= tol ||
+          std::fabs(dc - turn.radius_nm) <= tol ||
+          dw <= turn.tangent_nm + tol;
+
+      if (!in_turn_zone) continue;
+
+      index = waypoint_index(turn.route_guid, turn.route_name,
+                             turn.waypoint_guid);
+      if (index >= 0) return index;
+    }
+
+    auto route = resolve_route(item.route_guid, item.route_name);
+    if (route && route->pWaypointList) {
+      double best_distance = 0.03;
+      int current = 0;
+      for (auto node = route->pWaypointList->GetFirst();
+           node; node = node->GetNext(), ++current) {
+        PlugIn_Waypoint* wp = node->GetData();
+        if (!wp) continue;
+
+        double distance = 0.0;
+        DistanceBearingMercator_Plugin(
+            wp->m_lat, wp->m_lon,
+            item.start_lat, item.start_lon,
+            nullptr, &distance);
+
+        if (distance <= best_distance) {
+          best_distance = distance;
+          index = current;
+        }
+      }
+      if (index >= 0) return index;
+    }
+
+    const RouteLegHit leg_hit =
+        FindNearestRouteLeg(item.start_lat, item.start_lon, 0.05);
+
+    const bool same_leg_route =
+        leg_hit.found &&
+        (leg_hit.route_guid == item.route_guid ||
+         (!item.route_name.IsEmpty() &&
+          leg_hit.route_name == item.route_name));
+
+    if (same_leg_route && leg_hit.leg_index > 0)
+      return leg_hit.leg_index;
+
+    return -1;
+  };
+
   auto populate = [&]() {
     list->DeleteAllItems();
+
+    std::vector<ObjectListRow> rows;
+    rows.reserve(m_ebl_vrms.size() + m_pils.size() + m_turns.size());
+    int sequence = 0;
 
     for (size_t i = 0; i < m_ebl_vrms.size(); ++i) {
       const RouteEblVrm& item = m_ebl_vrms[i];
@@ -2075,23 +2237,39 @@ void route_toolbar_pi::ShowObjectManager() {
         start_name = _("Free point");
       } else if (item.start_is_mark) {
         start_name =
-            item.start_mark_name.IsEmpty() ? _("Mark snap") : item.start_mark_name;
+            item.start_mark_name.IsEmpty()
+                ? _("Mark snap")
+                : item.start_mark_name;
       } else {
         start_name =
-            item.waypoint_name.IsEmpty() ? _("Waypoint snap") : item.waypoint_name;
+            item.waypoint_name.IsEmpty()
+                ? _("Waypoint snap")
+                : item.waypoint_name;
       }
 
-      const long row = list->InsertItem(
-          list->GetItemCount(), item.visible ? _("Yes") : _("No"));
-      list->SetItem(row, 1, _("EBL/VRM"));
-      list->SetItem(row, 2, route_name);
-      list->SetItem(row, 3, start_name);
-      list->SetItem(row, 4, item.target_name);
-      list->SetItem(
-          row, 5,
-          wxString::Format("%03.0f°T · %.2f NM",
-                           item.bearing_true, item.range_nm));
-      list->SetItemData(row, 1000000L + static_cast<long>(i));
+      const int wp_index = associate_ebl_wp(item);
+
+      ObjectListRow row;
+      row.code = 1000000L + static_cast<long>(i);
+      row.visible = item.visible;
+      row.type = _("EBL/VRM");
+      row.route_name = route_name;
+      row.assoc_wp =
+          wp_index >= 0
+              ? wxString::Format("WP%d", wp_index + 1)
+              : wxString(_("-"));
+      row.start_or_leg = start_name;
+      row.target_or_waypoint = item.target_name;
+      row.details = wxString::Format(
+          "%03.0f°T · %.2f NM",
+          item.bearing_true, item.range_nm);
+      row.route_order =
+          route_order_for(item.route_guid, item.route_name);
+      row.wp_order =
+          wp_index >= 0 ? wp_index : 1000000;
+      row.type_order = 2;
+      row.sequence = sequence++;
+      rows.push_back(row);
     }
 
     for (size_t i = 0; i < m_pils.size(); ++i) {
@@ -2099,18 +2277,32 @@ void route_toolbar_pi::ShowObjectManager() {
       const wxString route_name = route_name_for_pil(item);
       if (!matches_filter(route_name)) continue;
 
-      const long row = list->InsertItem(
-          list->GetItemCount(), item.visible ? _("Yes") : _("No"));
-      list->SetItem(row, 1, _("PIL"));
-      list->SetItem(row, 2, route_name);
-      list->SetItem(row, 3, item.from_name + _(" → ") + item.to_name);
-      list->SetItem(row, 4, wxString());
-      list->SetItem(
-          row, 5,
-          wxString::Format("%+.2f NM %s",
-                           item.offset_nm,
-                           item.offset_nm >= 0.0 ? _("Stbd") : _("Port")));
-      list->SetItemData(row, 2000000L + static_cast<long>(i));
+      const int wp_index =
+          item.leg_index > 0 ? item.leg_index : -1;
+
+      ObjectListRow row;
+      row.code = 2000000L + static_cast<long>(i);
+      row.visible = item.visible;
+      row.type = _("PIL");
+      row.route_name = route_name;
+      row.assoc_wp =
+          wp_index >= 0
+              ? wxString::Format("WP%d", wp_index + 1)
+              : wxString(_("-"));
+      row.start_or_leg =
+          item.from_name + _(" → ") + item.to_name;
+      row.target_or_waypoint = wxString();
+      row.details = wxString::Format(
+          "%+.2f NM %s",
+          item.offset_nm,
+          item.offset_nm >= 0.0 ? _("Stbd") : _("Port"));
+      row.route_order =
+          route_order_for(item.route_guid, item.route_name);
+      row.wp_order =
+          wp_index >= 0 ? wp_index : 1000000;
+      row.type_order = 1;
+      row.sequence = sequence++;
+      rows.push_back(row);
     }
 
     for (size_t i = 0; i < m_turns.size(); ++i) {
@@ -2118,26 +2310,67 @@ void route_toolbar_pi::ShowObjectManager() {
       const wxString route_name = route_name_for_turn(item);
       if (!matches_filter(route_name)) continue;
 
-      const long row = list->InsertItem(
-          list->GetItemCount(), item.visible ? _("Yes") : _("No"));
-      list->SetItem(row, 1, _("TURN"));
-      list->SetItem(row, 2, route_name);
-      list->SetItem(row, 3, wxString());
-      list->SetItem(row, 4, item.waypoint_name);
+      const int wp_index =
+          waypoint_index(item.route_guid, item.route_name,
+                         item.waypoint_guid);
 
-      wxString details =
-          wxString::Format("ΔK %.0f° %s · R %.2f NM",
-                           std::fabs(item.turn_angle_deg),
-                           item.turn_angle_deg >= 0.0 ? _("SB") : _("BB"),
-                           item.radius_nm);
+      ObjectListRow row;
+      row.code = 3000000L + static_cast<long>(i);
+      row.visible = item.visible;
+      row.type = _("TURN");
+      row.route_name = route_name;
+      row.assoc_wp =
+          wp_index >= 0
+              ? wxString::Format("WP%d", wp_index + 1)
+              : wxString(_("-"));
+      row.start_or_leg = wxString();
+      row.target_or_waypoint = item.waypoint_name;
+      row.details = wxString::Format(
+          "ΔK %.0f° %s · R %.2f NM",
+          std::fabs(item.turn_angle_deg),
+          item.turn_angle_deg >= 0.0 ? _("SB") : _("BB"),
+          item.radius_nm);
+
       if (item.rudder_angle_deg > 0.0)
-        details += wxString::Format(
+        row.details += wxString::Format(
             " · Rudder %.0f° %s",
             item.rudder_angle_deg,
             item.turn_angle_deg >= 0.0 ? _("SB") : _("BB"));
 
-      list->SetItem(row, 5, details);
-      list->SetItemData(row, 3000000L + static_cast<long>(i));
+      row.route_order =
+          route_order_for(item.route_guid, item.route_name);
+      row.wp_order =
+          wp_index >= 0 ? wp_index : 1000000;
+      row.type_order = 0;
+      row.sequence = sequence++;
+      rows.push_back(row);
+    }
+
+    std::stable_sort(
+        rows.begin(), rows.end(),
+        [](const ObjectListRow& a, const ObjectListRow& b) {
+          if (a.route_order != b.route_order)
+            return a.route_order < b.route_order;
+          if (a.route_name != b.route_name)
+            return a.route_name < b.route_name;
+          if (a.wp_order != b.wp_order)
+            return a.wp_order < b.wp_order;
+          if (a.type_order != b.type_order)
+            return a.type_order < b.type_order;
+          return a.sequence < b.sequence;
+        });
+
+    for (const ObjectListRow& item : rows) {
+      const long row = list->InsertItem(
+          list->GetItemCount(),
+          item.visible ? _("Yes") : _("No"));
+      list->SetItem(row, 1, item.type);
+      list->SetItem(row, 2, item.route_name);
+      list->SetItem(row, 3, item.assoc_wp);
+      list->SetItem(row, 4, item.start_or_leg);
+      list->SetItem(row, 5, item.target_or_waypoint);
+      list->SetItem(row, 6, item.details);
+      list->SetItemData(row, item.code);
     }
   };
 
