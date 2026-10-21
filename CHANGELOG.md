@@ -13,6 +13,7 @@
 - free-point EBL/VRM starts on TURN geometry are associated with the relevant TURN waypoint using tangent/arc/turn-zone geometry with a small tolerance
 - remaining route EBL/VRM starts fall back to nearby route waypoint or route-leg association, preventing valid pilotage observations from disappearing from reports
 - PDF and CSV report association now use the same route-aware rules
+- rotated route-leg course/distance labels no longer become mirrored when a leg direction is normalized for readable text orientation
 
 ### Changed
 
