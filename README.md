@@ -1,5 +1,10 @@
 # OpenCPN Route Toolbar
 
+[![Version](https://img.shields.io/badge/version-v0.5.11-blue)](https://github.com/UlfAndreasson/opencpn-route-toolbar/releases)
+
+**Current development version: v0.5.11**  
+**Latest packaged prerelease: v0.5.11-alpha1**
+
 **Route-aware coastal passage planning directly on your existing OpenCPN route.**
 
 Route Toolbar adds practical pilotage tools without requiring you to redraw the route as separate drawing objects. Work from the route already created in OpenCPN and add:
