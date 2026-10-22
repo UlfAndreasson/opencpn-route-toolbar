@@ -14,11 +14,19 @@
 - remaining route EBL/VRM starts fall back to nearby route waypoint or route-leg association, preventing valid pilotage observations from disappearing from reports
 - PDF and CSV report association now use the same route-aware rules
 - rotated route-leg course/distance labels no longer become mirrored when a leg direction is normalized for readable text orientation
+- Move labels no longer pans/jumps the chart or initially snaps a label away from its current position
+- visible EBL/VRM, PIL and TURN labels use their rendered position for direct hit-testing
+- manually positioned labels remain fixed across redraws and restart
+- off-screen EBL/VRM, PIL, TURN and route-leg labels are suppressed instead of being clamped to the viewport edge
+- automatic PIL and TURN labels prefer placement outside their associated geometry where practical
+- OpenGL and wxDC label behaviour is aligned for viewport changes and off-screen suppression
 
 ### Changed
 
 - Route Report summaries now include TURN count
 - report output is structured around the selected OpenCPN route and its planning objects in route order
+- Route Objects are grouped by owning route and sorted by waypoint/route association
+- 0.5.11 chart interaction and label placement have been runtime-tested in OpenCPN 5.14.2
 - project version advanced to 0.5.11
 
 ## 0.5.9 — 2026-10-12
