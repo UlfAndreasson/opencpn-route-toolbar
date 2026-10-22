@@ -1,6 +1,20 @@
-# Public release plan — Route Toolbar 0.5.8
+# Public release plan — Route Toolbar 0.5.11
 
 This document tracks the path from the current development preview to a public OpenCPN Plugin Manager release.
+
+## Current release state
+
+- Development version: **0.5.11**
+- GitHub prerelease target: **v0.5.11-alpha1**
+- OpenCPN target: **5.14.2**
+- Plugin API: **1.21**
+- wxWidgets: **3.2**
+- Package targets:
+  - macOS universal — arm64 + x86_64
+  - Windows x86_64
+  - Ubuntu 24.04 x86_64 GTK3
+
+The GitHub release workflow builds OpenCPN Plugin Manager-style tarballs and SHA-256 files for all three package targets. A GitHub prerelease is not the same thing as publication in the official OpenCPN Plugin Manager catalog; catalog metadata must still be tested and submitted to the appropriate OpenCPN catalog channel.
 
 ## Positioning
 
@@ -20,8 +34,8 @@ Use these five screenshots for the first public presentation:
 
 1. **Overview** — full route with EBL/VRM, PIL, TURN and route-leg course/distance information visible.
 2. **Route Toolbar** — main toolbar window open over the chart.
-3. **EBL/VRM editing** — action-button menu showing Move start point / Move target / Move label / Rename / Delete.
-4. **Route Objects** — list of persistent EBL/VRM, PIL and TURN objects with Select all / Show / Hide / Delete controls.
+3. **EBL/VRM editing** — editing controls for start/target/name/delete together with Move labels from the toolbar.
+4. **Route Objects** — list of persistent EBL/VRM, PIL and TURN objects with multi-select, show, hide and delete controls.
 5. **Route Report CSV** — exported passage-plan data opened in Numbers/Excel-compatible spreadsheet form.
 
 The GPX Replace/Import-as-new dialog is useful for documentation, but is less important as a lead promotional screenshot.
@@ -30,59 +44,43 @@ The GPX Replace/Import-as-new dialog is useful for documentation, but is less im
 
 ### 1. GitHub project page
 
-- keep README focused on the user problem and route-aware workflow
-- add the overview screenshot near the top
-- add the Route Toolbar, EBL edit, Route Objects and report screenshots further down
-- make current platform support and development-preview status explicit
+Current README should make the active version visible immediately at the top and keep the development-preview status explicit.
 
-### 2. GitHub release
+### 2. GitHub prerelease
 
-Create tag/release:
+Current prerelease target:
 
 ```text
-v0.5.8
+v0.5.11-alpha1
 ```
 
-Suggested title:
+Release title:
 
 ```text
-Route Toolbar 0.5.8 — first public development preview
+Route Toolbar 0.5.11 Alpha 1
 ```
 
-Suggested release notes:
-
-> Route Toolbar is an OpenCPN plugin for route-aware coastal passage planning and pilotage preparation.
->
-> 0.5.8 provides EBL/VRM sight lines, parallel index lines attached to route legs, turn geometry at route waypoints, automatic route-leg course/distance labels, persistent Route Objects, PDF/CSV reports and complete GPX route-package import/export.
->
-> This first public preview currently targets OpenCPN 5.14.2 on macOS Apple Silicon. Wider platform packaging and OpenCPN Plugin Manager integration are the next steps.
->
-> Feedback and testing are especially welcome around real-world pilotage workflows, UI clarity and cross-platform behaviour.
+The release workflow packages macOS universal, Windows x86_64 and Ubuntu 24.04 x86_64 builds and publishes their SHA-256 checksums alongside the tarballs.
 
 ### 3. OpenCPN Plugin Manager packaging
 
-Target the normal OpenCPN plugin distribution workflow rather than asking ordinary users to build from source.
+The package layout and metadata templates are prepared for the normal OpenCPN plugin distribution workflow.
 
-Work required:
+Before official catalog publication:
 
-- adapt/build the project for OpenCPN Plugin Manager packaging
-- create platform-specific plugin tarballs
-- generate plugin metadata
-- add CI builds for the target platforms
-- test install/uninstall/update through OpenCPN Plugin Manager
-- initially publish through the appropriate test/beta channel
-- submit metadata to the OpenCPN plugins catalog repository
+- verify each generated package and checksum
+- test import/install, enable/disable, update and uninstall through OpenCPN Plugin Manager where supported
+- verify plugin version shown by OpenCPN is 0.5.11
+- verify macOS universal package on Apple Silicon and Intel
+- verify Windows x86_64 package
+- verify Ubuntu 24.04 GTK3 x86_64 package
+- generate/update catalog XML using the exact release asset URLs and SHA-256 values
+- initially submit to the appropriate OpenCPN test/beta catalog channel
+- submit to the normal OpenCPN plugins catalog only after platform testing is satisfactory
 
-Do not promote the plugin as generally installable through Plugin Manager until these packages have been tested.
+Do not describe the plugin as generally available through the official Plugin Manager until its catalog metadata has actually been accepted/published.
 
 ### 4. Cross-platform test matrix
-
-Priority order:
-
-1. macOS Apple Silicon — existing development platform
-2. macOS Intel/universal compatibility
-3. Windows x64
-4. Linux x86_64
 
 For each platform verify:
 
@@ -92,9 +90,11 @@ For each platform verify:
 - EBL/VRM creation and editing
 - PIL creation/editing
 - TURN geometry
-- Route Objects persistence
+- Move labels and persistent manual label positions
+- no viewport-edge/off-screen label artefacts
+- Route Objects persistence and route-order sorting
 - route visibility controlling leg info
-- PDF/CSV report output
+- PDF/CSV Route Report including TURN/PIL/EBL data
 - GPX export/import and existing-route behaviour
 
 ### 5. Community announcement
@@ -105,36 +105,18 @@ Suggested forum/post title:
 Route Toolbar — route-aware EBL/VRM, Parallel Indexing and turn planning for OpenCPN
 ```
 
-Draft announcement:
+Suggested summary:
 
-> I have been developing a new OpenCPN plugin called Route Toolbar, aimed at coastal passage planning and pilotage preparation.
->
-> The idea is simple: instead of recreating an OpenCPN route using separate drawing objects, Route Toolbar works directly with the route you already have.
->
-> Current features include:
->
-> - route-aware EBL/VRM sight lines
-> - Parallel Index Lines attached directly to route legs
-> - turn-radius geometry at route waypoints
-> - automatic true-course/distance labels on route legs
-> - persistent/editable planning objects
-> - PDF and CSV passage-plan reports
-> - complete GPX route-package export/import
->
-> The current 0.5.8 development preview is working on OpenCPN 5.14.2 on macOS Apple Silicon. I am now preparing proper Plugin Manager packaging and would be interested in feedback from OpenCPN users — particularly anyone using OpenCPN for coastal pilotage, commercial training or passage planning.
->
-> Screenshots and source: [GitHub repository]
+> Route Toolbar is an OpenCPN plugin for coastal passage planning and pilotage preparation which works directly with the OpenCPN route you already have. Version 0.5.11 includes route-aware EBL/VRM, parallel index lines, tangent turn geometry, course/distance leg labels, persistent Route Objects, PDF/CSV passage-plan reports and GPX package import/export. The current alpha targets OpenCPN 5.14.2 and is being packaged for macOS universal, Windows x86_64 and Ubuntu 24.04 x86_64.
 
 ## What to ask testers
 
-Avoid a generic “what do you think?” request. Ask concrete questions:
-
 - Does attaching PIL directly to a route leg match the way you plan passages?
-- Are the EBL/VRM labels and route-leg annotations readable at practical chart scales?
+- Are EBL/VRM, PIL, TURN and route-leg labels readable and stable while panning/zooming?
 - Is the TURN representation useful, or is different turn information needed?
-- What data is missing from the PDF/CSV route report?
-- Are there workflows in Ocpn_Draw or other plugins that Route Toolbar should interoperate with rather than duplicate?
-- Which platform/OpenCPN version are you testing?
+- Is the PDF/CSV route report complete enough for a practical passage plan?
+- Does GPX package import/export behave as expected with existing OpenCPN routes?
+- Which platform and OpenCPN version are you testing?
 
 ## Release principle
 
