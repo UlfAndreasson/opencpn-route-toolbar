@@ -28,6 +28,7 @@ Requirements:
 - shallow legs place the label immediately above the line
 - steep legs place the label immediately to the visual left of the line
 - label remains close to the line and does not clamp to viewport edges
+- labels whose anchors are outside the visible chart are not drawn at the viewport edge
 - leg info is rendered only while the source OpenCPN route is visible
 - leg info follows the global **Hide/View labels and leg info** control
 - labels do not alter route geometry
@@ -63,16 +64,19 @@ Requirements:
 
 - stable automatic placement
 - manual placement through **Move labels** in Route Toolbar
-- manual placement survives restart
+- manual placement survives redraw and restart
+- activating Move labels must not pan/jump the chart
+- activating Move labels must not initially snap a label to a new position
+- visible labels use their rendered bounds for direct hit-testing
 - configurable font size
-- off-screen target labels are hidden
+- off-screen labels are hidden rather than clamped to viewport edges
 - labels and leg info can be hidden/viewed globally
 - hiding labels/leg info leaves EBL/VRM, PIL and TURN geometry visible
 - global label/leg-info visibility survives restart
 
 ### Editing
 
-An EBL/VRM must be selectable near its start point, target/end point or the line between them.
+An EBL/VRM must be selectable near its start point, target/end point, the line between them or its visible label.
 
 Available context actions include:
 
@@ -102,6 +106,9 @@ Requirements:
 - multiple PILs may exist on one leg
 - graphical editing has a live preview
 - PIL uses a compact/tight dashed pattern
+- automatic PIL label placement prefers the outside of the PIL geometry where practical
+- manually placed PIL labels retain their position
+- off-screen PIL labels are suppressed rather than moved to the viewport edge
 - PIL geometry remains visible when labels/leg info are globally hidden
 
 ## Route TURN
@@ -119,6 +126,12 @@ The user supplies a geometric turn radius. Route Toolbar calculates:
 
 An optional planned rudder angle can be stored as a manual planning value. TURN data is persistent and included in Route Toolbar GPX package data. TURN start/end points can be used as EBL/VRM Shift-snap starts.
 
+TURN label requirements:
+
+- automatic placement prefers the outside of the turn geometry where practical
+- manually placed TURN labels retain their position
+- off-screen TURN labels are suppressed rather than clamped to the viewport edge
+
 ## Route Objects
 
 **Route Objects...** displays saved EBL/VRM, PIL and TURN objects immediately when opened.
@@ -133,7 +146,7 @@ The manager supports:
 - Hide all
 - Delete selected
 
-Show/hide affects chart rendering only; stored objects remain available to GPX/report workflows.
+Objects are grouped by owning route and sorted by waypoint/route association. Show/hide affects chart rendering only; stored objects remain available to GPX/report workflows.
 
 ## Persistence
 
@@ -206,7 +219,7 @@ See [GPX_FORMAT.md](GPX_FORMAT.md).
 
 ## Context menu
 
-Context-menu registration is deferred until OpenCPN initialization is sufficiently complete. EBL/VRM editing accepts a click close to its start point, target point, line or visible yellow label. PIL editing accepts a click near the PIL line or label.
+Context-menu registration is deferred until OpenCPN initialization is sufficiently complete. EBL/VRM editing accepts a click close to its start point, target point, line or visible yellow label. PIL editing accepts a click near the PIL line or label. Label hit-testing must use the current rendered label position rather than a stale/default anchor.
 
 ## Rendering
 
@@ -215,7 +228,15 @@ Supported:
 - wxDC overlay rendering
 - OpenGL overlay rendering
 
-Both paths must implement object visibility, label/leg-info visibility, route visibility and route-leg labels consistently. macOS OpenGL deprecation warnings are expected during compilation and are not build failures.
+Both paths must implement object visibility, label/leg-info visibility, route visibility and route-leg labels consistently.
+
+Rendering requirements:
+
+- viewport panning/zooming must not change persisted manual label positions
+- off-screen EBL/VRM, PIL, TURN and route-leg labels must be suppressed instead of clamped to screen edges
+- automatic PIL/TURN placement should prefer the outside of the associated geometry
+- hit-testing must remain aligned with the visible object/label after viewport changes
+- macOS OpenGL deprecation warnings are expected during compilation and are not build failures
 
 ## Safety constraints
 
