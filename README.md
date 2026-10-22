@@ -42,7 +42,7 @@ Current development target:
 - Windows x86_64
 - Ubuntu 24.04 x86_64 GTK3
 
-> **Current status:** Alpha/development preview. 0.5.11 focuses on a complete route-aware passage-plan report with waypoint, leg, TURN, PIL and EBL/VRM information.
+> **Current status:** Alpha/development preview. 0.5.11 has been runtime-tested in OpenCPN 5.14.2 and focuses on a complete route-aware passage-plan report plus stable chart interaction and label placement for EBL/VRM, PIL and TURN objects.
 
 ## Typical workflow
 
@@ -66,6 +66,8 @@ Each OpenCPN route leg is annotated with true course and distance using the comp
 
 The label follows the route-leg angle and is placed immediately above shallow legs or immediately to the visual left of steep legs. Leg info is shown only while the source OpenCPN route itself is visible, and it also follows the global **Hide/View labels and leg info** control.
 
+Route-leg labels are not clamped to the viewport edge. If their anchor is outside the visible chart area they are simply not drawn, avoiding labels that appear to stick to or move along a screen edge while panning.
+
 OpenCPN API 1.21 does not expose every per-route custom display colour to plugins, so Route Toolbar uses the normal OpenCPN route display colour available through the plugin API.
 
 ## Route EBL / VRM
@@ -83,7 +85,9 @@ An existing EBL/VRM can be selected from its start point, target/end point, EBL 
 - Rename
 - Delete EBL/VRM
 
-Yellow EBL/VRM, PIL and TURN labels are repositioned through **Route Toolbar → Move labels**. Moving a start point graphically makes it a free chart position and removes its previous waypoint/Mark/TURN snap association.
+Yellow EBL/VRM, PIL and TURN labels are repositioned through **Route Toolbar → Move labels**. Label hit-testing uses the visible label position directly, and activating Move labels does not pan/jump the chart or initially snap the label to another position. Manually placed labels remain where the user put them across redraws and restarts.
+
+Moving a start point graphically makes it a free chart position and removes its previous waypoint/Mark/TURN snap association.
 
 ![Editing a Route EBL/VRM](screenshots/Screenshot%202026-10-12%20at%2016.04.14.png)
 
@@ -104,17 +108,17 @@ Offset convention:
 - positive = **SB / starboard**
 - negative = **BB / port**
 
-Multiple PILs can exist on one route leg. PIL objects are persistent, graphically editable and rendered with a compact dashed pattern.
+Multiple PILs can exist on one route leg. PIL objects are persistent, graphically editable and rendered with a compact dashed pattern. Automatic PIL labels are placed outside the PIL geometry where practical; manually moved label positions are preserved.
 
 ## Route TURN
 
 Route TURN creates tangent turn geometry at an interior route waypoint. The user supplies a geometric turn radius; Route Toolbar calculates the inbound/outbound course, course change and side, tangent/wheel-over distance, turn-start position, tangent arc and turn-end position. A planned rudder angle can be stored as a manual planning value.
 
-TURN objects are persistent and can be used as EBL/VRM snap points. TURN data is included in Route Toolbar GPX package data and in Route Report.
+TURN objects are persistent and can be used as EBL/VRM snap points. Automatic TURN labels are placed outside the turn geometry where practical, while manually moved positions are preserved. TURN data is included in Route Toolbar GPX package data and in Route Report.
 
 ## Route Objects
 
-**Route Objects...** lists saved EBL/VRM, PIL and TURN objects immediately when the dialog opens. Objects can be multi-selected, selected all at once, shown, hidden or deleted without deleting the source OpenCPN route.
+**Route Objects...** lists saved EBL/VRM, PIL and TURN objects immediately when the dialog opens. Objects can be multi-selected, selected all at once, shown, hidden or deleted without deleting the source OpenCPN route. The list is grouped by owning route and sorted by waypoint/route association so related planning objects stay together.
 
 ![Route Objects manager](screenshots/Screenshot%202026-10-12%20at%2016.05.10.png)
 
@@ -123,6 +127,8 @@ TURN objects are persistent and can be used as EBL/VRM snap points. TURN data is
 ## Labels and leg info
 
 The toolbar provides **Hide labels / View labels** and **Hide leg info / View leg info** controls. Hiding labels leaves EBL/VRM, PIL and TURN geometry visible, making it easier to inspect the route without information boxes obscuring the chart. Settings are persistent.
+
+Label rendering is consistent in wxDC and OpenGL. Off-screen labels are suppressed rather than clamped to the viewport edge, and manual label placement is retained until explicitly moved/reset by the user.
 
 ## Colours
 
