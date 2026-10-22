@@ -1,4 +1,4 @@
-name: Route Toolbar 0.5.10 Alpha release
+name: Route Toolbar 0.5.11 Alpha release
 
 on:
   workflow_dispatch:
@@ -10,6 +10,11 @@ on:
 
 permissions:
   contents: write
+
+env:
+  PLUGIN_VERSION: '0.5.11'
+  RELEASE_TAG: 'v0.5.11-alpha1'
+  RELEASE_NAME: 'Route Toolbar 0.5.11 Alpha 1'
 
 jobs:
   macos-arm64:
@@ -80,10 +85,10 @@ jobs:
           lipo -info universal/libroute_toolbar_pi.dylib | grep -q arm64
           lipo -info universal/libroute_toolbar_pi.dylib | grep -q x86_64
           if otool -L universal/libroute_toolbar_pi.dylib | grep -E '/opt/homebrew|/usr/local/Cellar'; then exit 1; fi
-          ROOT='route_toolbar_pi-0.5.10_darwin-wx32-10-universal'
+          ROOT="route_toolbar_pi-${PLUGIN_VERSION}_darwin-wx32-10-universal"
           mkdir -p "dist/$ROOT/OpenCPN.app/Contents/PlugIns"
           cp universal/libroute_toolbar_pi.dylib "dist/$ROOT/OpenCPN.app/Contents/PlugIns/libroute_toolbar_pi.dylib"
-          sed 's/@VERSION@/0.5.10/g' packaging/macos/package-metadata-universal.xml.in > "dist/$ROOT/metadata.xml"
+          sed "s/@VERSION@/${PLUGIN_VERSION}/g" packaging/macos/package-metadata-universal.xml.in > "dist/$ROOT/metadata.xml"
           xmllint --noout "dist/$ROOT/metadata.xml"
           tar -C dist -czf "dist/$ROOT.tar.gz" "$ROOT"
           shasum -a 256 "dist/$ROOT.tar.gz" > "dist/$ROOT.tar.gz.sha256"
@@ -109,10 +114,10 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j 2
           file build/libroute_toolbar_pi.so
-          ROOT='route_toolbar_pi-0.5.10_ubuntu-gtk3-x86_64-24.04'
+          ROOT="route_toolbar_pi-${PLUGIN_VERSION}_ubuntu-gtk3-x86_64-24.04"
           mkdir -p "dist/$ROOT/lib/opencpn"
           cp build/libroute_toolbar_pi.so "dist/$ROOT/lib/opencpn/libroute_toolbar_pi.so"
-          sed 's/@VERSION@/0.5.10/g' packaging/linux/package-metadata.xml.in > "dist/$ROOT/metadata.xml"
+          sed "s/@VERSION@/${PLUGIN_VERSION}/g" packaging/linux/package-metadata.xml.in > "dist/$ROOT/metadata.xml"
           xmllint --noout "dist/$ROOT/metadata.xml"
           tar -C dist -czf "dist/$ROOT.tar.gz" "$ROOT"
           sha256sum "dist/$ROOT.tar.gz" > "dist/$ROOT.tar.gz.sha256"
@@ -154,11 +159,11 @@ jobs:
             -DwxWidgets_ROOT_DIR="$env:WX_ROOT" `
             -DwxWidgets_LIB_DIR="$env:WX_LIB"
           cmake --build build --config Release --parallel 2
-          $root = 'route_toolbar_pi-0.5.10_msvc-wx32-10-x86_64'
+          $root = "route_toolbar_pi-${env:PLUGIN_VERSION}_msvc-wx32-10-x86_64"
           $stage = Join-Path 'dist' $root
           New-Item -ItemType Directory -Force -Path (Join-Path $stage 'plugins') | Out-Null
           Copy-Item 'build/Release/route_toolbar_pi.dll' (Join-Path $stage 'plugins/route_toolbar_pi.dll')
-          $metadata = (Get-Content 'packaging/windows/package-metadata.xml.in' -Raw).Replace('@VERSION@', '0.5.10')
+          $metadata = (Get-Content 'packaging/windows/package-metadata.xml.in' -Raw).Replace('@VERSION@', $env:PLUGIN_VERSION)
           Set-Content -Path (Join-Path $stage 'metadata.xml') -Value $metadata -Encoding utf8
           [xml](Get-Content (Join-Path $stage 'metadata.xml') -Raw) | Out-Null
           tar -C dist -czf "dist/$root.tar.gz" $root
@@ -183,11 +188,11 @@ jobs:
           merge-multiple: true
       - name: List release assets
         run: ls -lah release-assets
-      - name: Publish v0.5.10-alpha2
+      - name: Publish v0.5.11-alpha1
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.5.10-alpha2
-          name: Route Toolbar 0.5.10 Alpha 2
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_NAME }}
           prerelease: true
           generate_release_notes: true
           files: |
